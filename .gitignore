@@ -1,5 +1,39 @@
 ardupilot/
+
+# Docker/build artifacts
 .buildx-cache/
 dist/images/
+configs/generated-frames/
 *.tar
 *.tar.zst
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Python environments and packaging output
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+build/
+
+# Local logs, temp files, and runtime state
+*.log
+*.tmp
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Editor/project-local metadata
+.idea/
+.vscode/

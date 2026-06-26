@@ -23,7 +23,7 @@ Environment overrides:
   IMAGE_REPO       Image repo/name. Default: ardupilot-sitl
   OUTPUT_DIR       Archive output directory. Default: dist/images
   CACHE_DIR        BuildKit local cache directory. Default: .buildx-cache
-  DOCKERFILE       Dockerfile path. Default: Dockerfile_new
+  DOCKERFILE       Dockerfile path. Default: Dockerfile
   BASE_IMAGE       Builder/runtime base image. Default: Dockerfile default
   TAG              Builder/runtime base tag. Default: Dockerfile default
   WAF_JOBS         Waf parallel jobs. Default: Dockerfile default
@@ -71,7 +71,7 @@ else
 fi
 
 image_repo="${IMAGE_REPO:-ardupilot-sitl}"
-dockerfile="${DOCKERFILE:-Dockerfile_new}"
+dockerfile="${DOCKERFILE:-Dockerfile}"
 output_dir="${OUTPUT_DIR:-dist/images}"
 cache_dir="${CACHE_DIR:-.buildx-cache}"
 zstd_level="${ZSTD_LEVEL:-9}"

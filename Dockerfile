@@ -186,13 +186,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     python3-pexpect \
     screen
 
-RUN install -d -m 0755 /usr/local/bin \
+RUN install -d -m 0755 /usr/local/bin /configs \
     && chown -R ${USER_NAME}:${USER_NAME} /home/${USER_NAME} /${USER_NAME}
 
 COPY --from=builder --chown=${USER_NAME}:${USER_NAME} /home/${USER_NAME}/ardupilot /home/${USER_NAME}/ardupilot
 COPY --from=builder --chown=${USER_NAME}:${USER_NAME} /home/${USER_NAME}/venv-ardupilot /home/${USER_NAME}/venv-ardupilot
 COPY --from=builder --chown=${USER_NAME}:${USER_NAME} /home/${USER_NAME}/.ardupilot_env /home/${USER_NAME}/.ardupilot_env
 COPY --from=builder --chown=${USER_NAME}:${USER_NAME} /home/${USER_NAME}/Micro-XRCE-DDS-Gen/scripts /home/${USER_NAME}/Micro-XRCE-DDS-Gen/scripts
+COPY docker/resolve-sitl-config.py /usr/local/bin/resolve-sitl-config.py
 
 RUN printf '%s\n' \
         'source ~/.ardupilot_env' \
@@ -221,9 +222,11 @@ RUN printf '%s\n' \
         'if [ -n "${PROXY:-}" ]; then' \
         '    extra_args+=(-m "${PROXY}")' \
         'fi' \
+        'mapfile -t config_args < <(/usr/local/bin/resolve-sitl-config.py)' \
+        'extra_args+=("${config_args[@]}")' \
         'exec Tools/autotest/sim_vehicle.py -j "${JOBS:-2}" --vehicle "${VEHICLE}" --frame "${FRAME}" -I "${INSTANCE}" --sysid "${SYSID}" --custom-location="${LAT},${LON},${ALT},${DIR}" -w --no-rebuild --speedup "${SPEEDUP}" "${extra_args[@]}" "$@"' \
         > /usr/local/bin/run-sitl.sh \
-    && chmod +x /usr/local/bin/ardupilot_entrypoint.sh /usr/local/bin/run-sitl.sh
+    && chmod +x /usr/local/bin/ardupilot_entrypoint.sh /usr/local/bin/run-sitl.sh /usr/local/bin/resolve-sitl-config.py
 
 USER ${USER_NAME}
 WORKDIR /home/${USER_NAME}/ardupilot
@@ -249,5 +252,9 @@ ENV VEHICLE=ArduCopter
 ENV FRAME=quad
 ENV SPEEDUP=1
 ENV NO_MAVPROXY=0
+ENV SITL_CONFIG_DIR=/configs
+ENV VEHICLEINFO_JSON=
+ENV MODEL=
+ENV PARAM_FILE=
 
 ENTRYPOINT ["/usr/local/bin/ardupilot_entrypoint.sh"]

@@ -1,0 +1,11 @@
+{
+  "ArduPlane": {
+    "default_frame": "plane",
+    "frames": {
+      "plane": {
+        "waf_target": "bin/arduplane",
+        "default_params_filename": "plane.parm"
+      }
+    }
+  }
+}

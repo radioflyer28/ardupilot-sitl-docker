@@ -218,18 +218,22 @@ provided with `env.list` or `docker run -e`.
 Common runtime environment variables:
 
 ```text
-INSTANCE      SITL instance number. Default: 0
-SYSID         MAVLink autopilot system ID. Default: 1
-VEHICLE       sim_vehicle.py vehicle. Default: ArduCopter
-FRAME         sim_vehicle.py frame/model. Default: quad
-LAT           Custom home latitude
-LON           Custom home longitude
-ALT           Custom home altitude in meters
-DIR           Custom home heading in degrees
-SPEEDUP       Simulation speed multiplier. Default: 1
-NO_MAVPROXY   Set to 1 to append --no-mavproxy. Default: 0
-PROXY         Optional extra MAVProxy args passed with -m/--mavproxy-args
-JOBS          sim_vehicle.py -j value at runtime. Default: 2
+INSTANCE        SITL instance number. Default: 0
+SYSID           MAVLink autopilot system ID. Default: 1
+VEHICLE         sim_vehicle.py vehicle. Default: ArduCopter
+FRAME           sim_vehicle.py frame/model. Default: quad
+SITL_CONFIG_DIR Runtime config directory. Default: /configs
+VEHICLEINFO_JSON Optional mounted vehicleinfo.json path
+MODEL           Optional sim_vehicle.py --model override
+PARAM_FILE      Optional file passed with --add-param-file
+LAT             Custom home latitude
+LON             Custom home longitude
+ALT             Custom home altitude in meters
+DIR             Custom home heading in degrees
+SPEEDUP         Simulation speed multiplier. Default: 1
+NO_MAVPROXY     Set to 1 to append --no-mavproxy. Default: 0
+PROXY           Optional extra MAVProxy args passed with -m/--mavproxy-args
+JOBS            sim_vehicle.py -j value at runtime. Default: 2
 ```
 
 `INSTANCE` does not automatically change `SYSID`. For multiple vehicles, set
@@ -240,6 +244,148 @@ docker run ... -e INSTANCE=0 -e SYSID=1 -p 5760:5760/tcp ...
 docker run ... -e INSTANCE=1 -e SYSID=2 -p 5770:5770/tcp ...
 docker run ... -e INSTANCE=2 -e SYSID=3 -p 5780:5780/tcp ...
 ```
+
+
+Runtime Model And Param File
+----------------------------
+
+The runtime image can use mounted model and parameter files without rebuilding
+ArduPilot. Mount your config directory at `/configs`, then set `MODEL` and
+`PARAM_FILE`.
+
+For a JSON-backed Copter physics model:
+
+```bash
+docker run -it --rm \
+  --env-file env.list \
+  -v "$PWD/configs:/configs:ro" \
+  -e MODEL="quad:/configs/my_quad.json" \
+  -e PARAM_FILE="my_quad.parm" \
+  ardupilot-sitl:copter-4.6.3
+```
+
+`MODEL` is passed directly to `sim_vehicle.py --model`. For Copter model JSON,
+use the ArduPilot frame/model prefix plus the mounted path, such as
+`quad:/configs/my_quad.json`, `x:/configs/my_quad_x.json`, or
+`octa-quad-cwx:/configs/heavy_octa.json`.
+
+`PARAM_FILE` is passed as one `--add-param-file` argument. Absolute paths are
+used as-is. Relative paths are resolved under `SITL_CONFIG_DIR`, which defaults
+to `/configs`.
+
+Example with an absolute parameter file path:
+
+```bash
+docker run -it --rm \
+  --env-file env.list \
+  -v "$PWD/configs:/configs:ro" \
+  -e MODEL="quad:/configs/my_quad.json" \
+  -e PARAM_FILE="/configs/my_quad.parm" \
+  ardupilot-sitl:copter-4.6.3
+```
+
+Mounted `vehicleinfo.json`
+--------------------------
+
+For reusable custom vehicles, mount a config directory containing
+`vehicleinfo.json`, the model JSON, and the matching params. If
+`$SITL_CONFIG_DIR/vehicleinfo.json` exists, the wrapper uses it automatically.
+
+Example directory:
+
+```text
+configs/my_quad/
+  vehicleinfo.json
+  my_quad.json
+  my_quad.parm
+```
+
+Example `vehicleinfo.json` frame entry:
+
+```json
+{
+  "ArduCopter": {
+    "default_frame": "my-quad",
+    "frames": {
+      "my-quad": {
+        "waf_target": "bin/arducopter",
+        "model": "quad:my_quad.json",
+        "default_params_filename": "my_quad.parm"
+      }
+    }
+  }
+}
+```
+
+Run it:
+
+```bash
+docker run -it --rm \
+  --env-file env.list \
+  -v "$PWD/configs/my_quad:/configs:ro" \
+  -e FRAME=my-quad \
+  ardupilot-sitl:copter-4.6.3
+```
+
+Relative `model` JSON paths and `default_params_filename` paths from the
+mounted `vehicleinfo.json` are resolved relative to the mounted file's
+directory. The wrapper copies the mounted `vehicleinfo.json` over
+ArduPilot's runtime `Tools/autotest/pysim/vehicleinfo.json` before launching
+`sim_vehicle.py`.
+
+`MODEL` and `PARAM_FILE` still work with a mounted `vehicleinfo.json`. When
+set, they override the model or params inferred from the mounted JSON.
+
+
+Reference Config Bundles
+------------------------
+
+This repo includes small reference bundles under `configs/frames/`. They are
+copied from ArduPilot's `Tools/autotest` model and default parameter files,
+then flattened so each directory can be mounted directly as `SITL_CONFIG_DIR`.
+
+Checked-in example bundles:
+
+```text
+configs/frames/arducopter-quad  ArduCopter quad params
+configs/frames/arduplane-plane  ArduPlane plane params
+```
+
+Generate the full catalog on demand with:
+
+```bash
+scripts/populate-config-bundles.py
+```
+
+By default the generated catalog is written to ignored
+`configs/generated-frames/`. It contains one mountable bundle per ArduPilot
+`vehicleinfo.json` frame that references local model or parameter assets.
+
+Run the checked-in Copter quad bundle:
+
+```bash
+docker run -it --rm \
+  --env-file env.list \
+  -v "$PWD/configs/frames/arducopter-quad:/configs:ro" \
+  -e VEHICLE=ArduCopter \
+  -e FRAME=quad \
+  ardupilot-sitl:copter-4.6.3
+```
+
+Run the checked-in Plane bundle:
+
+```bash
+docker run -it --rm \
+  --env-file env.list \
+  -v "$PWD/configs/frames/arduplane-plane:/configs:ro" \
+  -e VEHICLE=ArduPlane \
+  -e FRAME=plane \
+  ardupilot-sitl:plane-4.6.3
+```
+
+Copy one of these directories when creating a custom vehicle. Edit the local
+`vehicleinfo.json`, model JSON, and `.parm` files together, then mount the copy
+at `/configs`.
 
 
 Docker Compose: Multiple SITL Instances
@@ -356,3 +502,11 @@ mavproxy.py \
   --out=udp:127.0.0.1:14550 \
   --out=tcpin:0.0.0.0:5761
 ```
+
+
+Development Docs
+----------------
+
+Design rationale and trade-offs live in `docs/DESIGN.md`.
+
+Future improvements and backlog items live in `docs/FUTURE_WORK.md`.
