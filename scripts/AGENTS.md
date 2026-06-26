@@ -8,8 +8,9 @@ Owns repository helper scripts for release builds and config bundle generation.
 
 ## Ownership
 
-- `build-release-image.sh`: builds one ArduPilot release image and exports it
-  as a zstd-compressed Docker archive.
+- `build-release-image.sh`: builds one ArduPilot release image and either
+  exports it as a zstd-compressed Docker archive or pushes an OCI image with
+  zstd-compressed layers.
 - `populate-config-bundles.py`: generates mountable SITL config bundles from
   the local ArduPilot checkout.
 

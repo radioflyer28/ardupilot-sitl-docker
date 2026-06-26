@@ -104,8 +104,9 @@ Default section order:
   `.buildx-cache/`, `dist/images/`, and `configs/generated-frames/`.
 - Keep checked-in config bundles small and example-oriented. Use
   `scripts/populate-config-bundles.py` for full generated catalogs.
-- Keep the README user-facing. Put design rationale in `docs/DESIGN.md`, future
-  work in `docs/FUTURE_WORK.md`, and session history in `SESSION_SUMMARY.md`.
+- Keep the README user-facing. Put design rationale in `docs/DESIGN.md`,
+  research indexes in `docs/RESEARCH.md`, future work in
+  `docs/FUTURE_WORK.md`, and session history in `SESSION_SUMMARY.md`.
 
 
 ## Verification
@@ -145,7 +146,7 @@ sandboxed environments.
 
 - `configs/AGENTS.md`: runtime SITL config bundles and generated catalog rules.
 - `docker/AGENTS.md`: runtime config resolver and Docker helper code.
-- `docs/AGENTS.md`: design, backlog, and durable documentation rules.
+- `docs/AGENTS.md`: design, research, backlog, and durable documentation rules.
 - `scripts/AGENTS.md`: build/export and config generation scripts.
 
 Root-owned files include `Dockerfile`, `README.md`, `SESSION_SUMMARY.md`,

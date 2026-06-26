@@ -8,11 +8,21 @@ This file tracks likely improvements. Keep design rationale in
 
 - Add validation in `run-sitl.sh` or `resolve-sitl-config.py` that checks model
   and param files before launch and prints concise errors.
+- Add runtime Lua installation support:
+  - copy `$SITL_CONFIG_DIR/scripts/` into the ArduPilot working `scripts/`
+    directory before launch
+  - add a singular `LUA_SCRIPT` env var that resolves relative to
+    `SITL_CONFIG_DIR` and copies one explicit script
+  - keep script installation runtime-only so Lua experiments do not require
+    image rebuilds
 - Add a short-name config selector such as `VEHICLE_CONFIG=arducopter-quad`
   that resolves to a bundle under a known config root.
 - Generate env files or Compose overrides from config bundles.
 - Consider supporting multiple parameter files explicitly if a clear user
   workflow appears. Keep the default direct path singular.
+- Add first-class initial-state config support on top of runtime Lua. The
+  current recommendation is a config-file-driven Lua script that calls
+  `sim:set_pose` on arm; see `docs/INITIAL_STATE.md`.
 
 
 ## ArduPilot Integration
@@ -38,6 +48,15 @@ This file tracks likely improvements. Keep design rationale in
 ## Runtime And Networking
 
 - Add Compose examples for mounted config bundles.
+- Add derived-image examples that use an `ardupilot-sitl:*` image as a base and
+  layer companion software on top, such as ROS 2, MAVROS, and custom control
+  logic. Include an entrypoint pattern that starts `run-sitl.sh` alongside the
+  companion node and handles shutdown cleanly.
+- Add a Compose file builder that takes a fleet definition and generates a
+  multi-SITL Compose file. It should let users define the number of vehicles and
+  per-vehicle settings such as starting latitude/longitude, altitude, heading,
+  frame type, vehicle type, system ID, instance number, mounted config bundle,
+  exposed ports, and image tag.
 - Add Compose profiles for Copter, Plane, Rover, and Sub.
 - Document direct TCP vs MAVProxy fan-out with a small diagram or table.
 

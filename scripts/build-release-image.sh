@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-Build one ArduPilot SITL image for a vehicle release and export it as zstd.
+Build one ArduPilot SITL image for a vehicle release.
 
 Usage:
   scripts/build-release-image.sh <target> <version-or-ref>
@@ -17,17 +17,20 @@ Targets:
 Examples:
   scripts/build-release-image.sh copter 4.6.0
   scripts/build-release-image.sh plane Plane-4.6.0
-  WAF_JOBS=8 ZSTD_LEVEL=22 scripts/build-release-image.sh rover 4.6.0
+  WAF_JOBS=8 ZSTD_LEVEL=6 scripts/build-release-image.sh rover 4.6.0
+  IMAGE_OUTPUT=local scripts/build-release-image.sh copter 4.6.0
+  IMAGE_OUTPUT=registry IMAGE_REPO=ghcr.io/example/ardupilot-sitl scripts/build-release-image.sh copter 4.6.0
 
 Environment overrides:
   IMAGE_REPO       Image repo/name. Default: ardupilot-sitl
+  IMAGE_OUTPUT     Output mode: archive, local, or registry. Default: archive
   OUTPUT_DIR       Archive output directory. Default: dist/images
   CACHE_DIR        BuildKit local cache directory. Default: .buildx-cache
   DOCKERFILE       Dockerfile path. Default: Dockerfile
   BASE_IMAGE       Builder/runtime base image. Default: Dockerfile default
   TAG              Builder/runtime base tag. Default: Dockerfile default
   WAF_JOBS         Waf parallel jobs. Default: Dockerfile default
-  ZSTD_LEVEL       zstd compression level. Default: 9
+  ZSTD_LEVEL       zstd compression level for image layers and archives. Default: 3
   ZSTD_LONG        zstd --long window. Default: 27
 
 Restore:
@@ -71,10 +74,11 @@ else
 fi
 
 image_repo="${IMAGE_REPO:-ardupilot-sitl}"
+image_output="${IMAGE_OUTPUT:-archive}"
 dockerfile="${DOCKERFILE:-Dockerfile}"
 output_dir="${OUTPUT_DIR:-dist/images}"
 cache_dir="${CACHE_DIR:-.buildx-cache}"
-zstd_level="${ZSTD_LEVEL:-9}"
+zstd_level="${ZSTD_LEVEL:-3}"
 zstd_long="${ZSTD_LONG:-27}"
 
 safe_version="$(printf '%s' "$version" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_.-' '-')"
@@ -105,12 +109,44 @@ if [[ -f "${cache_dir}/index.json" ]]; then
     cache_args=(--cache-from "type=local,src=${cache_dir}" "${cache_args[@]}")
 fi
 
+case "$image_output" in
+    archive)
+        output_args=(
+            --output "type=docker,compression=zstd,compression-level=${zstd_level},force-compression=true"
+        )
+        ;;
+    local)
+        output_args=(
+            --output "type=docker,compression=zstd,compression-level=${zstd_level},force-compression=true"
+        )
+        ;;
+    registry)
+        output_args=(
+            --output "type=image,push=true,oci-mediatypes=true,compression=zstd,compression-level=${zstd_level},force-compression=true"
+        )
+        ;;
+    *)
+        echo "Unsupported IMAGE_OUTPUT: $image_output. Expected archive, local, or registry" >&2
+        exit 2
+        ;;
+esac
+
 echo "Building ${image_tag} from ${ardupilot_ref}"
 docker buildx build -f "$dockerfile" \
     "${build_args[@]}" \
     "${cache_args[@]}" \
     -t "$image_tag" \
-    --load .
+    "${output_args[@]}" .
+
+if [[ "$image_output" == "registry" ]]; then
+    echo "Pushed ${image_tag} with zstd-compressed OCI layers"
+    exit 0
+fi
+
+if [[ "$image_output" == "local" ]]; then
+    echo "Loaded ${image_tag} into the local Docker image store"
+    exit 0
+fi
 
 zstd_args=(-T0 "-${zstd_level}" "--long=${zstd_long}" -f)
 if [[ "$zstd_level" =~ ^[0-9]+$ ]] && (( zstd_level > 19 )); then

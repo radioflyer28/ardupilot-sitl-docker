@@ -58,8 +58,10 @@ mavproxy.py --master=tcp:127.0.0.1:5760
 Release Build Script
 --------------------
 
-Use `scripts/build-release-image.sh` to build one vehicle/release image and
-save it as a zstd-compressed Docker archive.
+Use `scripts/build-release-image.sh` to build one vehicle/release image.
+By default it loads the image locally with zstd BuildKit compression options,
+then saves a zstd-compressed Docker archive. It can also load the local image
+without writing an archive, or push an OCI image with zstd-compressed layers.
 
 ```bash
 scripts/build-release-image.sh <target> <version-or-ref>
@@ -93,20 +95,38 @@ Script environment overrides:
 
 ```text
 IMAGE_REPO   Image repo/name. Default: ardupilot-sitl
+IMAGE_OUTPUT Output mode: archive, local, or registry. Default: archive
 OUTPUT_DIR   Archive output directory. Default: dist/images
 CACHE_DIR    BuildKit local cache directory. Default: .buildx-cache
 DOCKERFILE   Dockerfile path. Default: Dockerfile
 BASE_IMAGE   Builder/runtime base image. Default: Dockerfile default
 TAG          Builder/runtime base tag. Default: Dockerfile default
 WAF_JOBS     Waf parallel jobs. Default: Dockerfile default
-ZSTD_LEVEL   zstd compression level. Default: 9
+ZSTD_LEVEL   zstd compression level for image layers and archives. Default: 3
 ZSTD_LONG    zstd --long window. Default: 27
+```
+
+Build and load a local image without exporting an archive:
+
+```bash
+IMAGE_OUTPUT=local \
+WAF_JOBS=8 \
+scripts/build-release-image.sh copter 4.6.3
 ```
 
 Restore an exported image:
 
 ```bash
 zstd -dc dist/images/ardupilot-sitl-copter-4.6.3.docker.tar.zst | docker load
+```
+
+Push a registry image with zstd-compressed OCI layers:
+
+```bash
+IMAGE_OUTPUT=registry \
+IMAGE_REPO=ghcr.io/example/ardupilot-sitl \
+WAF_JOBS=8 \
+scripts/build-release-image.sh copter 4.6.3
 ```
 
 
@@ -508,5 +528,10 @@ Development Docs
 ----------------
 
 Design rationale and trade-offs live in `docs/DESIGN.md`.
+
+Research indexes and investigation status live in `docs/RESEARCH.md`.
+
+SITL initial-state research and runtime Lua recommendations live in
+`docs/INITIAL_STATE.md`.
 
 Future improvements and backlog items live in `docs/FUTURE_WORK.md`.

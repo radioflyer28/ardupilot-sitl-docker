@@ -5,3 +5,5 @@
 !README.md
 !env.list
 !.dockerignore
+!docker/
+!docker/resolve-sitl-config.py

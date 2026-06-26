@@ -1,4 +1,6 @@
 ardupilot/
+.agents/
+.codex/
 
 # Docker/build artifacts
 .buildx-cache/

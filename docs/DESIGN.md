@@ -14,6 +14,9 @@ start in automation.
 - Support headless and non-interactive container use.
 - Let users run stock frames, direct model/param overrides, or mounted custom
   vehicle config bundles.
+- Preserve the ability to use SITL images as base images for larger simulation
+  stacks, such as images that add ROS 2, MAVROS, companion nodes, or custom
+  control logic on top of the prebuilt SITL runtime.
 - Keep the checked-in repository small while making larger generated catalogs
   easy to recreate
   (re: SITL physics config and corresponding ardupilot param files in configs/frames).
@@ -50,8 +53,9 @@ the runtime container and calls `sim_vehicle.py` manually, they should pass
   `sub`). When empty, `WAF_ALL_TARGETS` is built.
 - `WAF_JOBS` controls waf parallelism.
 - BuildKit cache mounts are used for apt, pip, Gradle, and ccache.
-- The release script exports images as zstd-compressed Docker archives with
-  compression level 9 by default.
+- The release script applies zstd BuildKit compression options for local Docker
+  output, defaults to exporting a zstd-compressed Docker archive, and can push
+  OCI images with zstd-compressed layers through BuildKit registry output.
 - `configs/generated-frames/`, `.buildx-cache/`, and exported archives are
   ignored so normal development stays quiet.
 
@@ -70,6 +74,11 @@ The image entrypoint has two modes:
 - `NO_MAVPROXY=1` appends `--no-mavproxy`
 - `PROXY` appends custom MAVProxy args through `-m`
 - runtime config args resolved by `resolve-sitl-config.py`
+
+Derived images may replace the entrypoint when they need to orchestrate SITL
+alongside companion processes. The stable surface for that use case is
+`/usr/local/bin/run-sitl.sh`, plus the runtime environment variables documented
+in the README.
 
 
 ## Runtime Vehicle Config
@@ -94,6 +103,18 @@ Mounted config bundles:
 
 This preserves an ArduPilot-native shape for reusable vehicles while avoiding
 runtime rebuilds.
+
+
+## Runtime Lua And Initial State
+
+ArduPilot SITL can be moved into an airborne state through Lua scripting rather
+than through `sim_vehicle.py` alone. The project should preserve that as a
+runtime capability: mounted config bundles may eventually include a `scripts/`
+directory, and a dedicated `LUA_SCRIPT` env var should allow selecting one
+specific script without building a full bundle.
+
+The detailed research and recommended integration path live in
+`docs/INITIAL_STATE.md`.
 
 
 ## Why The Wrapper Resolves Params
@@ -137,6 +158,10 @@ path to all frames, params, and model assets when they need them.
 
 - `README.md`: user-facing workflow, commands, and examples.
 - `docs/DESIGN.md`: architecture, philosophy, and why decisions were made.
+- `docs/RESEARCH.md`: index of investigations, research status, and links to
+  detailed research notes.
+- `docs/INITIAL_STATE.md`: research and recommendations for airborne or custom
+  SITL initial state.
 - `docs/FUTURE_WORK.md`: actionable improvements and backlog.
 - `SESSION_SUMMARY.md`: chronological dev log for this session.
 
