@@ -29,6 +29,7 @@ Checked-in runtime examples:
 ```text
 examples/initial-state  Lua initial-state script plus params that enable it
 examples/mission        QGC WPL 110 mission plus params that enable loading it
+examples/plan-artifacts Fence and rally JSON plans plus helper params
 ```
 
 Mount an example as `SITL_CONFIG_DIR` when you want to try it against a stock
@@ -52,6 +53,18 @@ docker run -it --rm \
   -v "$PWD/configs/examples/mission:/configs:ro" \
   -e PARAM_FILE=mission.parm \
   -e MISSION_FILE=missions/simple-copter.waypoints \
+  ardupilot-sitl:copter-4.6.3
+```
+
+Fence and rally:
+
+```bash
+docker run -it --rm \
+  --env-file env.list \
+  -v "$PWD/configs/examples/plan-artifacts:/configs:ro" \
+  -e PARAM_FILE=plan-artifacts.parm \
+  -e FENCE_FILE=fences/simple-polygon.json \
+  -e RALLY_FILE=rally/recovery-points.json \
   ardupilot-sitl:copter-4.6.3
 ```
 

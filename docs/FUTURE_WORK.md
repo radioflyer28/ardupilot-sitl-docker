@@ -20,6 +20,17 @@ This file tracks likely improvements. Keep design rationale in
 - Add optional mission-start controls such as `MISSION_START_INDEX` or
   `MISSION_MODE=auto`, if users need the wrapper to do more than preload the
   mission.
+- Add import support for common ground-station fence/rally export formats after
+  the project-owned JSON examples have had real use.
+- Consider a future `SCENARIO_FILE` that references all per-vehicle artifacts
+  in one place, with env vars retained as direct overrides.
+- Add a fleet/scenario config format that can generate Compose services. Env
+  vars should remain the low-level interface for one-off SITLs, while fleet
+  config manages repeated per-vehicle settings and artifact paths.
+- Add a first-class artifact output convention for generated Compose services,
+  including per-vehicle `.BIN` log directories, MAVProxy `.tlog` directories
+  when MAVProxy is enabled, stdout/stderr capture, and metadata that records the
+  image tag, ArduPilot ref, config bundle, and env used for each run.
 
 
 ## ArduPilot Integration
@@ -53,7 +64,9 @@ This file tracks likely improvements. Keep design rationale in
   multi-SITL Compose file. It should let users define the number of vehicles and
   per-vehicle settings such as starting latitude/longitude, altitude, heading,
   frame type, vehicle type, system ID, instance number, mounted config bundle,
-  exposed ports, and image tag.
+  exposed ports, image tag, params, mission, initial-state Lua, geofence, and
+  rally plans. It should emit the low-level env vars and mounts rather than
+  replacing them.
 - Add Compose profiles for Copter, Plane, Rover, and Sub.
 - Document direct TCP vs MAVProxy fan-out with a small diagram or table.
 

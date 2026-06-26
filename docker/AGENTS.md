@@ -13,6 +13,8 @@ Owns helper code copied into the runtime image.
 - `install-sitl-lua.sh`: installs runtime Lua scripts into the ArduPilot
   working `scripts/` directory before SITL starts, and stages mission files
   when `MISSION_FILE` is set.
+- `upload-plan-artifacts.py`: uploads runtime fence and rally JSON artifacts
+  through MAVLink mission protocol after SITL starts.
 - `load-mission.lua`: image-provided ArduPilot Lua loader for staged QGC WPL
   110 mission files.
 
@@ -40,6 +42,13 @@ Owns helper code copied into the runtime image.
   - stage selected missions into the ArduPilot working `missions/` directory
   - install the image-provided `load-mission.lua` script when `MISSION_FILE` is
     set
+- Preserve runtime fence/rally behavior:
+  - resolve relative `FENCE_FILE` and `RALLY_FILE` paths under
+    `$SITL_CONFIG_DIR`
+  - keep fence and rally as separate MAVLink mission protocol plan types
+  - use project-owned JSON as the checked-in example format
+  - support dry-run parsing without requiring `pymavlink` on the host
+  - connect through `PLAN_UPLOAD_MASTER` when set
 
 
 ## Work Guidance
@@ -56,6 +65,10 @@ Owns helper code copied into the runtime image.
 
 - Run:
   `python3 -m py_compile docker/resolve-sitl-config.py`
+- Run:
+  `python3 -m py_compile docker/upload-plan-artifacts.py`
+- Run:
+  `python3 docker/upload-plan-artifacts.py --dry-run --config-dir configs/examples/plan-artifacts --fence fences/simple-polygon.json --rally rally/recovery-points.json`
 - Run:
   `bash -n docker/install-sitl-lua.sh`
 - Run a Lua syntax check for `docker/load-mission.lua` when `lua` or `luac` is

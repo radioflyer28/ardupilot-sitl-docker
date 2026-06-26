@@ -248,6 +248,10 @@ MODEL           Optional sim_vehicle.py --model override
 PARAM_FILE      Optional file passed with --add-param-file
 LUA_SCRIPT      Optional Lua script copied into ArduPilot scripts/ at startup
 MISSION_FILE    Optional QGC WPL 110 mission loaded through Lua scripting
+FENCE_FILE      Optional geofence JSON uploaded with MAVLink mission protocol
+RALLY_FILE      Optional rally JSON uploaded with MAVLink mission protocol
+PLAN_UPLOAD_MASTER Optional MAVLink endpoint for fence/rally upload
+PLAN_UPLOAD_TIMEOUT Seconds to wait for fence/rally upload. Default: 60
 LAT             Custom home latitude
 LON             Custom home longitude
 ALT             Custom home altitude in meters
@@ -482,6 +486,117 @@ The mission format is documented by MAVLink:
 <https://mavlink.io/en/file_formats/>.
 
 
+Runtime Fence And Rally Plans
+-----------------------------
+
+Set `FENCE_FILE` and/or `RALLY_FILE` to upload geofence and rally point plans
+at startup. These are separate MAVLink mission-protocol plan types, so they use
+JSON files instead of the `QGC WPL 110` mission format.
+
+Example bundle:
+
+```text
+configs/my_quad/
+  plan-artifacts.parm
+  fences/
+    operating-area.json
+  rally/
+    recovery-points.json
+```
+
+Run it:
+
+```bash
+docker run -it --rm \
+  --env-file env.list \
+  -v "$PWD/configs/my_quad:/configs:ro" \
+  -e PARAM_FILE=plan-artifacts.parm \
+  -e FENCE_FILE=fences/operating-area.json \
+  -e RALLY_FILE=rally/recovery-points.json \
+  ardupilot-sitl:copter-4.6.3
+```
+
+Absolute paths are used as-is. Relative `FENCE_FILE` and `RALLY_FILE` paths
+are resolved under `SITL_CONFIG_DIR`.
+
+Fence example:
+
+```json
+{
+  "version": 1,
+  "fences": [
+    {
+      "type": "polygon_inclusion",
+      "points": [
+        { "lat": 37.1961467, "lon": -80.5790381 },
+        { "lat": 37.1981467, "lon": -80.5790381 },
+        { "lat": 37.1981467, "lon": -80.5770381 },
+        { "lat": 37.1961467, "lon": -80.5770381 }
+      ]
+    }
+  ]
+}
+```
+
+Supported fence types are `polygon_inclusion`, `polygon_exclusion`,
+`circle_inclusion`, `circle_exclusion`, `home_circle_inclusion`, and
+`return_point`. Circle fences use `radius`; non-home circles and return points
+also use `lat` and `lon`.
+
+Rally example:
+
+```json
+{
+  "version": 1,
+  "points": [
+    {
+      "lat": 37.1973467,
+      "lon": -80.5782381,
+      "alt": 35,
+      "frame": "relative"
+    }
+  ]
+}
+```
+
+The uploader waits until SITL accepts MAVLink, uploads the selected artifacts,
+then leaves the container running normally. When `NO_MAVPROXY=1`, it uploads
+to direct SITL TCP. When MAVProxy is enabled and `PLAN_UPLOAD_MASTER` is unset,
+the wrapper adds a private in-container MAVProxy `tcpin` output for the upload.
+
+Override `PLAN_UPLOAD_MASTER` only when you want the uploader to connect to a
+specific endpoint, for example `tcp:127.0.0.1:5761`. `PLAN_UPLOAD_TIMEOUT`
+defaults to 60 seconds.
+
+When combining fence/rally upload with custom MAVProxy outputs, prefer the
+`PROXY` env var so the wrapper can add its private upload output too. If you
+pass your own trailing `-m/--mavproxy-args` after the image name, set
+`PLAN_UPLOAD_MASTER` to an endpoint exposed by those MAVProxy args.
+
+This repo includes a copyable plan-artifacts example:
+
+```text
+configs/examples/plan-artifacts/
+  plan-artifacts.parm
+  fences/
+    simple-polygon.json
+  rally/
+    recovery-points.json
+```
+
+Run it against the stock Copter quad frame:
+
+```bash
+docker run -it --rm \
+  --env-file env.list \
+  -v "$PWD/configs/examples/plan-artifacts:/configs:ro" \
+  -e PARAM_FILE=plan-artifacts.parm \
+  -e FENCE_FILE=fences/simple-polygon.json \
+  -e RALLY_FILE=rally/recovery-points.json \
+  ardupilot-sitl:copter-4.6.3
+```
+
+
 Reference Config Bundles
 ------------------------
 
@@ -649,6 +764,48 @@ mavproxy.py \
 ```
 
 
+Post-Run Logs
+-------------
+
+ArduPilot and MAVProxy produce different logs:
+
+```text
+.BIN   ArduPilot onboard/dataflash log, written by the vehicle logger
+.tlog  MAVLink telemetry log, normally written by MAVProxy or another GCS
+```
+
+For `.BIN` logs, SITL's default filesystem logger writes under the run
+directory's `logs/` directory. You can mount a host artifact directory and pass
+`sim_vehicle.py --use-dir` after the image name:
+
+```bash
+mkdir -p artifacts/uav0
+
+docker run -it --rm \
+  --env-file env.list \
+  -v "$PWD/artifacts/uav0:/artifacts/uav0" \
+  ardupilot-sitl:copter-4.6.3 \
+  --use-dir /artifacts/uav0
+```
+
+Add params such as `LOG_DISARMED 1` when you need logs before arming.
+
+For `.tlog` logs, keep MAVProxy enabled and pass `--aircraft` to place
+MAVProxy state and telemetry logs in a named directory:
+
+```bash
+docker run -it --rm \
+  --env-file env.list \
+  -v "$PWD/artifacts/uav0:/artifacts/uav0" \
+  ardupilot-sitl:copter-4.6.3 \
+  --use-dir /artifacts/uav0/sitl \
+  --aircraft /artifacts/uav0/mavproxy
+```
+
+When `NO_MAVPROXY=1` or `--no-mavproxy` is used, this image does not create a
+MAVProxy `.tlog`; use an external GCS/logger if you still need a telemetry log.
+
+
 Development Docs
 ----------------
 
@@ -658,5 +815,8 @@ Research indexes and investigation status live in `docs/RESEARCH.md`.
 
 SITL initial-state research and runtime Lua recommendations live in
 `docs/INITIAL_STATE.md`.
+
+Runtime mission, fence, rally, and fleet artifact decisions live in
+`docs/PLAN_ARTIFACTS.md`.
 
 Future improvements and backlog items live in `docs/FUTURE_WORK.md`.

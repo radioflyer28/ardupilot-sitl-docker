@@ -24,8 +24,9 @@ catalogs.
 - Each bundle must include a local `vehicleinfo.json`.
 - Relative paths inside bundle `vehicleinfo.json` should point to files in the
   same bundle directory.
-- Runtime examples and bundles may use `scripts/` for Lua and `missions/` for
-  QGC WPL 110 mission files.
+- Runtime examples and bundles may use `scripts/` for Lua, `missions/` for QGC
+  WPL 110 mission files, `fences/` for geofence JSON, and `rally/` for rally
+  point JSON.
 - Do not check in full generated catalogs unless the user explicitly asks.
 
 
@@ -46,6 +47,7 @@ catalogs.
 - For checked-in examples, validate:
   - `configs/frames/arducopter-quad/vehicleinfo.json`
   - `configs/frames/arduplane-plane/vehicleinfo.json`
+- Validate checked-in plan artifact JSON with `python3 -m json.tool`.
 - When changing generation behavior, run `scripts/populate-config-bundles.py`
   with `--output` pointed at a temporary directory.
 

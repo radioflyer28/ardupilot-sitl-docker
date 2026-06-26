@@ -8,4 +8,5 @@
 !docker/
 !docker/resolve-sitl-config.py
 !docker/install-sitl-lua.sh
+!docker/upload-plan-artifacts.py
 !docker/load-mission.lua

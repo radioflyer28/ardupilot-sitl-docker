@@ -14,6 +14,9 @@ start in automation.
 - Support headless and non-interactive container use.
 - Let users run stock frames, direct model/param overrides, or mounted custom
   vehicle config bundles.
+- Keep runtime plan artifacts service-local so fleets can start multiple SITLs
+  with independent frame/model, params, mission, initial pose, geofence, rally,
+  and networking settings.
 - Preserve the ability to use SITL images as base images for larger simulation
   stacks, such as images that add ROS 2, MAVROS, companion nodes, or custom
   control logic on top of the prebuilt SITL runtime.
@@ -108,6 +111,58 @@ This preserves an ArduPilot-native shape for reusable vehicles while avoiding
 runtime rebuilds.
 
 
+## Runtime Plan Artifacts
+
+Mission, fence, rally, Lua, params, model, and vehicleinfo files should be
+organized as per-vehicle bundle artifacts under `SITL_CONFIG_DIR`. The intended
+fleet shape is one container per SITL instance, with each service mounting its
+own bundle at `/configs`.
+
+Direct env vars remain the right low-level interface for one-off SITLs and
+quick overrides. Multi-SITL workflows need a higher-level fleet/scenario layer
+that generates per-service env vars, mounts, ports, and image tags from a
+per-vehicle definition.
+
+Implemented artifacts:
+
+- `MISSION_FILE` for QGC WPL 110 mission files
+- `LUA_SCRIPT` and `$SITL_CONFIG_DIR/scripts/` for Lua scripts
+- `PARAM_FILE`, `MODEL`, and mounted `vehicleinfo.json`
+- `FENCE_FILE` for geofence plans
+- `RALLY_FILE` for rally point plans
+
+Fence and rally do not use the Lua mission loader. ArduPilot exposes them as
+separate MAVLink mission protocol plan types, and the local Lua bindings do not
+expose write APIs for replacing fence/rally storage. The wrapper uses a small
+Python/pymavlink uploader that runs after SITL accepts MAVLink and uploads
+`MAV_MISSION_TYPE_FENCE` or `MAV_MISSION_TYPE_RALLY`.
+
+When `NO_MAVPROXY=1`, fence/rally upload uses the direct SITL TCP endpoint by
+default. When MAVProxy is enabled, the wrapper creates a private in-container
+MAVProxy `tcpin` output unless `PLAN_UPLOAD_MASTER` explicitly points
+elsewhere. This keeps host-facing ports under user control while still allowing
+one-shot startup uploads.
+
+Detailed research lives in `docs/PLAN_ARTIFACTS.md`.
+
+
+## Runtime Analysis Artifacts
+
+Post-run analysis artifacts have separate producers:
+
+- `.BIN` logs are ArduPilot onboard/dataflash logs written by the SITL vehicle
+  logger. The SITL filesystem logger writes under the run directory's `logs/`
+  directory, and `sim_vehicle.py --use-dir` can move that run directory under a
+  mounted host artifact path.
+- `.tlog` logs are MAVLink telemetry logs normally written by MAVProxy or a
+  GCS. `sim_vehicle.py --aircraft` is passed through to MAVProxy and can place
+  MAVProxy state and telemetry logs in a named artifact directory.
+
+For `NO_MAVPROXY=1` runs, the image should not claim to create `.tlog` files.
+Users who need telemetry logs in direct-SITL mode should run an external GCS or
+logger against the published TCP/UDP endpoint.
+
+
 ## Runtime Lua, Missions, And Initial State
 
 ArduPilot SITL can load missions and move into an airborne state through Lua
@@ -129,9 +184,8 @@ The wrapper installs scripts only; params still control whether ArduPilot
 scripting runs. Mission loading needs `SCR_ENABLE=1`; initial-state scripts
 that call `sim:set_pose` also need the SITL AHRS backend selected by params.
 
-The repo includes a small copyable initial-state example under
-`configs/examples/initial-state/` and a mission example under
-`configs/examples/mission/`.
+The repo includes small copyable examples under `configs/examples/` for
+initial state, mission loading, and plan artifacts.
 
 The detailed research and recommended integration path live in
 `docs/INITIAL_STATE.md`.
