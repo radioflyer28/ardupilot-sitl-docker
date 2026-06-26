@@ -19,12 +19,11 @@ scripting:
 - The binding requires `AHRS_EKF_TYPE=10`.
 - ArduPilot's own QuadPlane autotests use this path for airborne recovery tests.
 
-For this project, the recommended long-term shape is runtime Lua support in the
-Docker wrapper:
+For this project, runtime Lua support now lives in the Docker wrapper:
 
 - Copy scripts from `$SITL_CONFIG_DIR/scripts/` into the ArduPilot working
   `scripts/` directory before launching SITL.
-- Add a singular `LUA_SCRIPT` runtime env var for mounting or selecting one
+- Use a singular `LUA_SCRIPT` runtime env var for mounting or selecting one
   specific Lua script outside a full config bundle.
 - Keep initial-state config as runtime data, not a build-time image concern.
 
@@ -191,9 +190,9 @@ Mission:
   being enabled or running externally.
 
 
-## Docker Runtime Recommendation
+## Docker Runtime Support
 
-Add first-class runtime Lua installation to the wrapper. The image should not
+The Docker wrapper installs Lua scripts at container start. The image does not
 rebuild ArduPilot to change initial-state behavior.
 
 Recommended bundle convention:
@@ -219,7 +218,7 @@ into:
 This matches ArduPilot's SITL scripting behavior: scripts in the working
 `scripts/` directory are automatically launched when scripting is enabled.
 
-Recommended env var:
+Runtime env var:
 
 ```text
 LUA_SCRIPT
@@ -284,26 +283,41 @@ The trigger should default to `arm`, because that is the behavior proven by
 ArduPilot's existing script and avoids starting the simulation in an airborne
 state before the autopilot is ready.
 
+This repo includes a copyable Lua-table-based example:
+
+```text
+configs/examples/initial-state/scripts/initial-state.lua
+configs/examples/initial-state/initial-state.parm
+```
+
+The example uses the same `sim:set_pose` path, applies once by default on arm,
+and keeps position, velocity, attitude, rates, trigger, and optional numeric
+mode in a local Lua table at the top of the file.
+
 
 ## Practical Sequence Today
 
-Without adding new wrapper support yet, the manual sequence is:
+With wrapper support, the practical sequence is:
 
-1. Mount or copy `sim_arming_pos.lua` into the container's ArduPilot `scripts/`
-   directory.
-2. Start SITL with scripting enabled and the sim AHRS backend:
+1. Mount a config bundle that contains `scripts/`, or set `LUA_SCRIPT` to one
+   explicit script path.
+2. Include params that enable scripting and, for pose injection, the sim AHRS
+   backend:
 
    ```text
    SCR_ENABLE 1
    AHRS_EKF_TYPE 10
    ```
 
-3. Restart SITL or restart scripting so the script registers `SIM_APOS_*`.
-4. Set the `SIM_APOS_*` params over MAVLink.
+3. Start SITL with the wrapper, which copies the scripts into ArduPilot's
+   working `scripts/` directory.
+4. For scripts such as `sim_arming_pos.lua`, set any dynamic script-created
+   params over MAVLink after scripting starts.
 5. Arm the vehicle.
 
-For automation, this is clumsy. That is why wrapper-level Lua installation plus
-a config-file-driven initial-state script is the preferred project direction.
+For full automation across many vehicles, editing a Lua table by hand is still
+clumsy. That is why a separate generated or mounted initial-state config file
+remains a likely next step.
 
 
 ## Open Questions

@@ -73,6 +73,7 @@ The image entrypoint has two modes:
 - `INSTANCE`, `SYSID`, `VEHICLE`, `FRAME`, location, heading, and speedup
 - `NO_MAVPROXY=1` appends `--no-mavproxy`
 - `PROXY` appends custom MAVProxy args through `-m`
+- runtime Lua scripts installed by `install-sitl-lua.sh`
 - runtime config args resolved by `resolve-sitl-config.py`
 
 Derived images may replace the entrypoint when they need to orchestrate SITL
@@ -108,10 +109,21 @@ runtime rebuilds.
 ## Runtime Lua And Initial State
 
 ArduPilot SITL can be moved into an airborne state through Lua scripting rather
-than through `sim_vehicle.py` alone. The project should preserve that as a
-runtime capability: mounted config bundles may eventually include a `scripts/`
-directory, and a dedicated `LUA_SCRIPT` env var should allow selecting one
-specific script without building a full bundle.
+than through `sim_vehicle.py` alone. The image preserves that as a runtime
+capability:
+
+- mounted config bundles may include a `scripts/` directory
+- `LUA_SCRIPT` selects one explicit script, with relative paths resolved under
+  `SITL_CONFIG_DIR`
+- selected scripts are copied into the ArduPilot working `scripts/` directory
+  before `sim_vehicle.py` starts
+
+The wrapper installs scripts only; params still control whether ArduPilot
+scripting runs. Initial-state scripts that call `sim:set_pose` also need the
+SITL AHRS backend selected by params.
+
+The repo includes a small copyable initial-state example under
+`configs/examples/initial-state/`.
 
 The detailed research and recommended integration path live in
 `docs/INITIAL_STATE.md`.

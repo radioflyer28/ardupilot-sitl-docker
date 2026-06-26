@@ -10,6 +10,8 @@ catalogs.
 ## Ownership
 
 - `configs/frames/`: small checked-in examples only.
+- `configs/examples/`: small copyable runtime config examples that are not
+  full frame bundles.
 - `configs/generated-frames/`: ignored output from
   `scripts/populate-config-bundles.py`.
 - `configs/README.md` and `configs/frames/MANIFEST.md`: user-facing guidance
@@ -28,6 +30,8 @@ catalogs.
 ## Work Guidance
 
 - Keep examples minimal and copyable.
+- Runtime examples may include helper params or scripts when that makes the
+  example runnable without changing stock frame bundles.
 - Prefer refreshing examples from `./ardupilot/Tools/autotest` rather than
   hand-inventing parameter files.
 - If adding a generated catalog for local use, use ignored

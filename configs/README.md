@@ -24,6 +24,23 @@ frames/arducopter-quad  ArduCopter quad params
 frames/arduplane-plane  ArduPlane plane params
 ```
 
+Checked-in runtime examples:
+
+```text
+examples/initial-state  Lua initial-state script plus params that enable it
+```
+
+Mount `examples/initial-state` as `SITL_CONFIG_DIR` when you want to try the
+example against a stock ArduPilot frame:
+
+```bash
+docker run -it --rm \
+  --env-file env.list \
+  -v "$PWD/configs/examples/initial-state:/configs:ro" \
+  -e PARAM_FILE=initial-state.parm \
+  ardupilot-sitl:copter-4.6.3
+```
+
 The full generated catalog is intentionally not checked in. Generate it on
 demand into ignored `configs/generated-frames/`; it contains one mountable
 bundle per ArduPilot `vehicleinfo.json` frame that references local model or

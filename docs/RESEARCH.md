@@ -11,7 +11,9 @@ planned work, track the action in `docs/FUTURE_WORK.md`.
 
 ## SITL Initial State
 
-Status: researched, not implemented
+Status: runtime Lua support and a copyable initial-state script are
+implemented; generated or externally mounted initial-state config is still
+planned
 
 Detailed note:
 
@@ -38,15 +40,20 @@ Key findings:
 - Mission loading is separate and can be handled through Lua mission APIs,
   MAVLink, or MAVProxy.
 
-Recommendations:
+Implemented recommendations:
 
 - Support runtime Lua installation from `$SITL_CONFIG_DIR/scripts/`.
 - Add a singular `LUA_SCRIPT` env var for selecting one explicit Lua script.
-- Prefer a config-file-driven initial-state Lua script over direct reliance on
-  `SIM_APOS_*` params, because those params are created dynamically by Lua.
+- Provide a copyable `initial-state.lua` example that calls `sim:set_pose` once
+  by default when the vehicle arms.
+
+Remaining recommendation:
+
+- Prefer generated or externally mounted initial-state config over direct
+  reliance on `SIM_APOS_*` params when scaling this beyond hand-edited example
+  scripts, because those params are created dynamically by Lua.
 
 Feeds:
 
-- `docs/DESIGN.md`: runtime Lua and initial-state direction.
-- `docs/FUTURE_WORK.md`: runtime Lua installation and initial-state feature
-  backlog items.
+- `docs/DESIGN.md`: runtime Lua and initial-state decisions.
+- `docs/FUTURE_WORK.md`: first-class initial-state feature backlog item.

@@ -10,11 +10,13 @@ Owns helper code copied into the runtime image.
 
 - `resolve-sitl-config.py`: resolves runtime SITL config environment into
   `sim_vehicle.py` arguments.
+- `install-sitl-lua.sh`: installs runtime Lua scripts into the ArduPilot
+  working `scripts/` directory before SITL starts.
 
 
 ## Local Contracts
 
-- Keep helpers compatible with the runtime image's standard Python.
+- Keep helpers compatible with the runtime image's standard Python and Bash.
 - Avoid patching upstream ArduPilot when wrapper-side resolution is sufficient.
 - Preserve the direct override path:
   - `MODEL` emits `--model`
@@ -23,6 +25,12 @@ Owns helper code copied into the runtime image.
   - use `$VEHICLEINFO_JSON` when set
   - otherwise use `$SITL_CONFIG_DIR/vehicleinfo.json` when present
   - resolve relative paths against the mounted `vehicleinfo.json` directory
+- Preserve runtime Lua behavior:
+  - copy `$SITL_CONFIG_DIR/scripts/` into the ArduPilot working `scripts/`
+    directory when present
+  - resolve relative `LUA_SCRIPT` paths under `$SITL_CONFIG_DIR`
+  - copy `LUA_SCRIPT` after bundle scripts so explicit files can override by
+    basename
 
 
 ## Work Guidance
@@ -37,8 +45,10 @@ Owns helper code copied into the runtime image.
 
 - Run:
   `python3 -m py_compile docker/resolve-sitl-config.py`
+- Run:
+  `bash -n docker/install-sitl-lua.sh`
 - Smoke-test against a temporary ArduPilot-like directory when changing
-  resolution logic.
+  resolution or Lua install behavior.
 
 
 ## Child DOX Index

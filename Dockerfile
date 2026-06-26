@@ -194,6 +194,7 @@ COPY --from=builder --chown=${USER_NAME}:${USER_NAME} /home/${USER_NAME}/venv-ar
 COPY --from=builder --chown=${USER_NAME}:${USER_NAME} /home/${USER_NAME}/.ardupilot_env /home/${USER_NAME}/.ardupilot_env
 COPY --from=builder --chown=${USER_NAME}:${USER_NAME} /home/${USER_NAME}/Micro-XRCE-DDS-Gen/scripts /home/${USER_NAME}/Micro-XRCE-DDS-Gen/scripts
 COPY docker/resolve-sitl-config.py /usr/local/bin/resolve-sitl-config.py
+COPY docker/install-sitl-lua.sh /usr/local/bin/install-sitl-lua.sh
 
 RUN printf '%s\n' \
         'source ~/.ardupilot_env' \
@@ -216,6 +217,7 @@ RUN printf '%s\n' \
         'set -e' \
         "cd /home/${USER_NAME}/ardupilot" \
         'extra_args=()' \
+        '/usr/local/bin/install-sitl-lua.sh' \
         'if [ "${NO_MAVPROXY:-0}" = "1" ]; then' \
         '    extra_args+=(--no-mavproxy)' \
         'fi' \
@@ -226,7 +228,7 @@ RUN printf '%s\n' \
         'extra_args+=("${config_args[@]}")' \
         'exec Tools/autotest/sim_vehicle.py -j "${JOBS:-2}" --vehicle "${VEHICLE}" --frame "${FRAME}" -I "${INSTANCE}" --sysid "${SYSID}" --custom-location="${LAT},${LON},${ALT},${DIR}" -w --no-rebuild --speedup "${SPEEDUP}" "${extra_args[@]}" "$@"' \
         > /usr/local/bin/run-sitl.sh \
-    && chmod +x /usr/local/bin/ardupilot_entrypoint.sh /usr/local/bin/run-sitl.sh /usr/local/bin/resolve-sitl-config.py
+    && chmod +x /usr/local/bin/ardupilot_entrypoint.sh /usr/local/bin/run-sitl.sh /usr/local/bin/resolve-sitl-config.py /usr/local/bin/install-sitl-lua.sh
 
 USER ${USER_NAME}
 WORKDIR /home/${USER_NAME}/ardupilot
@@ -256,5 +258,6 @@ ENV SITL_CONFIG_DIR=/configs
 ENV VEHICLEINFO_JSON=
 ENV MODEL=
 ENV PARAM_FILE=
+ENV LUA_SCRIPT=
 
 ENTRYPOINT ["/usr/local/bin/ardupilot_entrypoint.sh"]

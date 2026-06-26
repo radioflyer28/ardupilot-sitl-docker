@@ -246,6 +246,7 @@ SITL_CONFIG_DIR Runtime config directory. Default: /configs
 VEHICLEINFO_JSON Optional mounted vehicleinfo.json path
 MODEL           Optional sim_vehicle.py --model override
 PARAM_FILE      Optional file passed with --add-param-file
+LUA_SCRIPT      Optional Lua script copied into ArduPilot scripts/ at startup
 LAT             Custom home latitude
 LON             Custom home longitude
 ALT             Custom home altitude in meters
@@ -355,6 +356,72 @@ ArduPilot's runtime `Tools/autotest/pysim/vehicleinfo.json` before launching
 
 `MODEL` and `PARAM_FILE` still work with a mounted `vehicleinfo.json`. When
 set, they override the model or params inferred from the mounted JSON.
+
+
+Runtime Lua Scripts
+-------------------
+
+The wrapper can install Lua scripts at container start without rebuilding the
+image. This is useful for SITL-only behavior such as initial-state injection,
+mission setup, simulated sensor behavior, or other ArduPilot scripting
+experiments.
+
+Bundle layout:
+
+```text
+configs/my_quad/
+  vehicleinfo.json
+  my_quad.json
+  my_quad.parm
+  scripts/
+    initial-state.lua
+```
+
+When `$SITL_CONFIG_DIR/scripts/` exists, the wrapper copies its contents into
+the ArduPilot working `scripts/` directory before launching `sim_vehicle.py`.
+
+For one explicit script, set `LUA_SCRIPT`:
+
+```bash
+docker run -it --rm \
+  --env-file env.list \
+  -v "$PWD/configs/my_quad:/configs:ro" \
+  -e LUA_SCRIPT=initial-state.lua \
+  ardupilot-sitl:copter-4.6.3
+```
+
+Absolute `LUA_SCRIPT` paths are used as-is. Relative paths are resolved under
+`SITL_CONFIG_DIR`. `LUA_SCRIPT` is copied after `$SITL_CONFIG_DIR/scripts/`, so
+an explicitly selected script can override a bundled script with the same
+basename.
+
+Installing a script is separate from enabling ArduPilot scripting. Include the
+required parameters in your bundle params or selected `PARAM_FILE`; commonly
+`SCR_ENABLE 1`, and for SITL pose injection with `sim:set_pose`,
+`AHRS_EKF_TYPE 10`.
+
+This repo includes a copyable initial-state example:
+
+```text
+configs/examples/initial-state/
+  initial-state.parm
+  scripts/
+    initial-state.lua
+```
+
+Run it against the stock Copter quad frame:
+
+```bash
+docker run -it --rm \
+  --env-file env.list \
+  -v "$PWD/configs/examples/initial-state:/configs:ro" \
+  -e PARAM_FILE=initial-state.parm \
+  ardupilot-sitl:copter-4.6.3
+```
+
+The example script applies one pose when the vehicle arms. Edit
+`scripts/initial-state.lua` to change the position, attitude, body-frame
+velocity, body rates, trigger, or numeric flight mode.
 
 
 Reference Config Bundles
