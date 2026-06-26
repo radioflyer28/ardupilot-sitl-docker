@@ -1,0 +1,4 @@
+.buildx-cache/
+dist/images/
+*.tar
+*.tar.zst

@@ -1,103 +1,321 @@
-ArduPilot Software-in-the-Loop Simulator Docker Container
-=========================================================
+ArduPilot SITL Docker Images
+============================
 
-The purpose of this is to run an ArduPilot SITL from within Docker.
+This repository builds Docker images for running pre-built ArduPilot
+Software-in-the-Loop (SITL) vehicles. The current image flow is centered on
+`Dockerfile_new`, which builds ArduPilot in a heavy builder stage and copies the
+pre-built SITL tree into a smaller runtime stage.
 
-DockerHub
----------
+The runtime image is meant to start quickly with `--no-rebuild`. It does not
+include a full compiler toolchain, so manual `sim_vehicle.py` runs inside the
+container should also use `--no-rebuild`, or use the included `run-sitl.sh`
+wrapper.
 
-A pre-built Docker image is available on DockerHub at:
-
-https://hub.docker.com/r/radarku/ardupilot-sitl
-
-- To download it, run `docker pull radarku/ardupilot-sitl`
-- To run it, run `docker run -it --rm -p 5760:5760 radarku/ardupilot-sitl`
-- To use it with [Docker Compose](https://docs.docker.com/compose/), add the following service to your `docker-compose.yml` file:
-    - You can launch it with `docker-compose up -d`
-    - If you update your `docker-compose.yml`, you can restart your container by running `docker-compose up -d` without getting the container ID and killing the container manually. See https://github.com/radarku/ardupilot-sitl-docker/issues/3
-    - To check the logs in `ArduCopter.log`, run `docker exec -it "$FOLDER_NAME_ardupilot-sitl_1" watch -n 1 "cat /tmp/ArduCopter.log"`, where you should update `$FOLDER_NAME` with the folder containing the `docker-compose.yml`.
-
-```yml
-services:
-  ardupilot-sitl:
-    image: radarku/ardupilot-sitl
-    platform: linux/amd64
-    tty: true
-    ports:
-      - 5760:5760
-```
 
 Quick Start
 -----------
 
-If you'd rather build the docker image yourself:
+Build a Copter release image and export it as a compressed archive:
 
-`docker build --tag ardupilot github.com/radarku/ardupilot-sitl-docker`
-
-You can now use the `--build-arg` option to specify which branch or tag in the ardupilot
-repository you'd like to use. Here's an example:
-
-`docker build --tag ardupilot --build-arg COPTER_TAG=Copter-4.0.1 github.com/radarku/ardupilot-sitl-docker`
-
-If no COPTER_TAG is supplied, the build will use the default defined in the Dockerfile, currently set at Copter-4.0.3
-
-To run the image:
-
-`docker run -it --rm -p 5760:5760 ardupilot`
-
-This will start an ArduCopter SITL on host TCP port 5760, so to connect to it from the host, you could:
-
-`mavproxy.py --master=tcp:localhost:5760`
-
-Options
--------
-
-There are a number of options available to configure the simulator, for example, to run an ArduRover instance on port 5761, you could:
-
-`docker run -it --rm -p 5761:5760 --env VEHICLE=APMRover2 ardupilot`
-
-We also have an example `env.list` file which can help you maintain your options and called like so:
-
-`docker run -it --rm -p 5761:5760 --env-file env.list ardupilot`
-
-The full list of options and their default values is:
-
-```
-INSTANCE    0
-LAT         42.3898
-LON         -71.1476
-ALT         14
-DIR         270
-MODEL       +
-SPEEDUP     1
-VEHICLE     arducopter
+```bash
+WAF_JOBS=8 scripts/build-release-image.sh copter 4.6.3
 ```
 
-So, for example, you could issue a command such as:
+This creates an image named:
 
-```
-docker run -it --rm -p 5761:5760 \
-   --env VEHICLE=APMRover2 \
-   --env MODEL=rover-skid \
-   --env LAT=39.9656 \
-   --env LON=-75.1810 \
-   --env ALT=276 \
-   --env DIR=180 \
-   --env SPEEDUP=2 \
-   ardupilot
+```text
+ardupilot-sitl:copter-4.6.3
 ```
 
-Vehicles and their corresponding models are listed below:
+and exports it to:
 
+```text
+dist/images/ardupilot-sitl-copter-4.6.3.docker.tar.zst
 ```
-ArduCopter: octa-quad|tri|singlecopter|firefly|gazebo-
-    iris|calibration|hexa|heli|+|heli-compound|dodeca-
-    hexa|heli-dual|coaxcopter|X|quad|y6|IrisRos|octa
-APMRover2: rover|gazebo-rover|rover-skid|calibration
-ArduSub: vectored
-ArduPlane: gazebo-zephyr|CRRCSim|last_letter|plane-
-    vtail|plane|quadplane-tilttri|quadplane|quadplane-
-    tilttrivec|calibration|plane-elevon|plane-
-    tailsitter|plane-dspoilers|quadplane-tri
-    |quadplane-cl84|jsbsim
+
+Run the image with the default entrypoint:
+
+```bash
+docker run -it --rm --env-file env.list ardupilot-sitl:copter-4.6.3
+```
+
+Run headless without MAVProxy and expose direct SITL MAVLink TCP:
+
+```bash
+docker run -d --rm \
+  --env-file env.list \
+  -e NO_MAVPROXY=1 \
+  -p 5760:5760/tcp \
+  ardupilot-sitl:copter-4.6.3
+```
+
+Connect from the host:
+
+```bash
+mavproxy.py --master=tcp:127.0.0.1:5760
+```
+
+
+Release Build Script
+--------------------
+
+Use `scripts/build-release-image.sh` to build one vehicle/release image and
+save it as a zstd-compressed Docker archive.
+
+```bash
+scripts/build-release-image.sh <target> <version-or-ref>
+```
+
+Targets:
+
+```text
+copter -> Copter-<version>
+plane  -> Plane-<version>
+rover  -> Rover-<version>
+sub    -> ArduSub-<version>
+```
+
+Examples:
+
+```bash
+WAF_JOBS=8 scripts/build-release-image.sh copter 4.6.3
+WAF_JOBS=8 scripts/build-release-image.sh plane 4.6.3
+WAF_JOBS=8 scripts/build-release-image.sh rover 4.6.3
+WAF_JOBS=8 scripts/build-release-image.sh sub 4.5.7
+```
+
+You can also pass the full ArduPilot ref:
+
+```bash
+WAF_JOBS=8 scripts/build-release-image.sh copter Copter-4.6.3
+```
+
+Script environment overrides:
+
+```text
+IMAGE_REPO   Image repo/name. Default: ardupilot-sitl
+OUTPUT_DIR   Archive output directory. Default: dist/images
+CACHE_DIR    BuildKit local cache directory. Default: .buildx-cache
+DOCKERFILE   Dockerfile path. Default: Dockerfile_new
+BASE_IMAGE   Builder/runtime base image. Default: Dockerfile default
+TAG          Builder/runtime base tag. Default: Dockerfile default
+WAF_JOBS     Waf parallel jobs. Default: Dockerfile default
+ZSTD_LEVEL   zstd compression level. Default: 9
+ZSTD_LONG    zstd --long window. Default: 27
+```
+
+Restore an exported image:
+
+```bash
+zstd -dc dist/images/ardupilot-sitl-copter-4.6.3.docker.tar.zst | docker load
+```
+
+
+Manual Docker Builds
+--------------------
+
+Build the default image:
+
+```bash
+docker buildx build -f Dockerfile_new \
+  --build-arg WAF_JOBS=8 \
+  -t ardupilot-sitl:latest \
+  --load .
+```
+
+Build a single target:
+
+```bash
+docker buildx build -f Dockerfile_new \
+  --build-arg ARDUPILOT_REF=Copter-4.6.3 \
+  --build-arg WAF_TARGET=copter \
+  --build-arg WAF_JOBS=8 \
+  -t ardupilot-sitl:copter-4.6.3 \
+  --load .
+```
+
+Build all standard targets by omitting `WAF_TARGET`:
+
+```bash
+docker buildx build -f Dockerfile_new \
+  --build-arg WAF_JOBS=8 \
+  -t ardupilot-sitl:all \
+  --load .
+```
+
+Use the lighter Debian slim base:
+
+```bash
+docker buildx build -f Dockerfile_new \
+  --build-arg BASE_IMAGE=debian \
+  --build-arg TAG=bookworm-slim \
+  --build-arg WAF_TARGET=copter \
+  --build-arg WAF_JOBS=8 \
+  -t ardupilot-sitl:copter-bookworm \
+  --load .
+```
+
+
+Build Args
+----------
+
+`Dockerfile_new` supports these main build args:
+
+```text
+BASE_IMAGE             Base image family. Default: ubuntu
+TAG                    Base image tag. Default: 24.04
+USER_NAME              Runtime user. Default: ardupilot
+USER_UID               Runtime user UID. Default: 1000
+USER_GID               Runtime user GID. Default: 1000
+ARDUPILOT_REPO         ArduPilot git repository URL
+ARDUPILOT_REF          Branch/tag/commit to checkout. Default: master
+COPTER_TAG             Legacy alias that takes precedence over ARDUPILOT_REF
+ARDUPILOT_CLONE_DEPTH  Shallow clone depth. Default: 1
+WAF_TARGET             One target: copter, plane, rover, sub. Empty builds all
+WAF_ALL_TARGETS        Targets built when WAF_TARGET is empty
+WAF_JOBS               Parallel waf jobs. Default: 2
+DO_AP_STM_ENV          Install STM32 toolchain. Default: 0
+```
+
+The Dockerfile uses BuildKit cache mounts for apt, pip, Gradle, and ccache. The
+repository also includes `.dockerignore` so the local `./ardupilot` checkout is
+not sent as Docker build context.
+
+
+BuildKit Cache
+--------------
+
+For the first cached build, use only `--cache-to`:
+
+```bash
+docker buildx build -f Dockerfile_new \
+  --build-arg WAF_TARGET=copter \
+  --build-arg WAF_JOBS=8 \
+  --cache-to type=local,dest=.buildx-cache,mode=max \
+  -t ardupilot-sitl:copter \
+  --load .
+```
+
+For later builds, use both cache flags:
+
+```bash
+docker buildx build -f Dockerfile_new \
+  --build-arg WAF_TARGET=copter \
+  --build-arg WAF_JOBS=8 \
+  --cache-from type=local,src=.buildx-cache \
+  --cache-to type=local,dest=.buildx-cache,mode=max \
+  -t ardupilot-sitl:copter \
+  --load .
+```
+
+The release build script handles this automatically: it imports the cache if
+`.buildx-cache/index.json` exists and exports cache on every build.
+
+
+Runtime Configuration
+---------------------
+
+The image entrypoint runs `run-sitl.sh` by default. Runtime settings can be
+provided with `env.list` or `docker run -e`.
+
+Common runtime environment variables:
+
+```text
+INSTANCE      SITL instance number. Default: 0
+SYSID         MAVLink autopilot system ID. Default: 1
+VEHICLE       sim_vehicle.py vehicle. Default: ArduCopter
+FRAME         sim_vehicle.py frame/model. Default: quad
+LAT           Custom home latitude
+LON           Custom home longitude
+ALT           Custom home altitude in meters
+DIR           Custom home heading in degrees
+SPEEDUP       Simulation speed multiplier. Default: 1
+NO_MAVPROXY   Set to 1 to append --no-mavproxy. Default: 0
+PROXY         Optional extra MAVProxy args passed with -m/--mavproxy-args
+JOBS          sim_vehicle.py -j value at runtime. Default: 2
+```
+
+`INSTANCE` does not automatically change `SYSID`. For multiple vehicles, set
+both:
+
+```bash
+docker run ... -e INSTANCE=0 -e SYSID=1 -p 5760:5760/tcp ...
+docker run ... -e INSTANCE=1 -e SYSID=2 -p 5770:5770/tcp ...
+docker run ... -e INSTANCE=2 -e SYSID=3 -p 5780:5780/tcp ...
+```
+
+
+Passing sim_vehicle.py Args
+---------------------------
+
+Arguments placed after the image name are handled by the entrypoint.
+
+If the first argument starts with `-`, the arguments are appended to
+`sim_vehicle.py`:
+
+```bash
+docker run -it --rm \
+  --env-file env.list \
+  ardupilot-sitl:copter-4.6.3 \
+  --no-mavproxy --udp
+```
+
+If the first argument does not start with `-`, it is run as a command instead:
+
+```bash
+docker run -it --rm ardupilot-sitl:copter-4.6.3 bash
+```
+
+Inside a debug shell, prefer the wrapper:
+
+```bash
+run-sitl.sh --no-mavproxy
+```
+
+If you call `sim_vehicle.py` manually in the runtime image, include
+`--no-rebuild` because compilers are not installed in the final stage:
+
+```bash
+Tools/autotest/sim_vehicle.py -v ArduCopter --frame quad --no-rebuild
+```
+
+
+MAVLink Access
+--------------
+
+With MAVProxy enabled, `sim_vehicle.py` uses its MAVProxy defaults unless
+`PROXY` or extra args override them.
+
+Without MAVProxy:
+
+```bash
+docker run -d --rm \
+  --env-file env.list \
+  -e NO_MAVPROXY=1 \
+  -p 5760:5760/tcp \
+  ardupilot-sitl:copter-4.6.3
+```
+
+Connect to direct SITL TCP:
+
+```bash
+mavproxy.py --master=tcp:127.0.0.1:5760
+```
+
+Default direct SITL TCP ports are:
+
+```text
+INSTANCE=0 -> 5760
+INSTANCE=1 -> 5770
+INSTANCE=2 -> 5780
+```
+
+Without MAVProxy you usually get one direct TCP MAVLink client. To fan out to
+multiple clients, run MAVProxy outside the container:
+
+```bash
+mavproxy.py \
+  --master=tcp:127.0.0.1:5760 \
+  --out=udp:127.0.0.1:14550 \
+  --out=tcpin:0.0.0.0:5761
 ```
