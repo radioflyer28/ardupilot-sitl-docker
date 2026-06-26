@@ -146,6 +146,50 @@ one-shot startup uploads.
 Detailed research lives in `docs/PLAN_ARTIFACTS.md`.
 
 
+## Scenario Manifest Direction
+
+A project-owned JSON Schema is a good fit for the next layer of runtime config,
+but it should be a manifest/orchestration layer rather than a replacement for
+ArduPilot-native files.
+
+The manifest should connect existing artifacts:
+
+- vehicle, frame, instance, system ID, location, heading, speedup, and image tag
+- model files and `vehicleinfo.json`
+- parameter files and small inline parameter overrides
+- mission, fence, and rally files or inline definitions
+- Lua script files and optional structured script config
+- artifact output locations for `.BIN`, `.tlog`, stdout/stderr, and metadata
+
+Native artifacts should remain first-class files inside the mounted bundle.
+This keeps ArduPilot formats inspectable, reusable in other tools, and close to
+upstream expectations. The JSON manifest should validate references, provide a
+stable shape for tooling, and generate the low-level runtime interface: env
+vars, `sim_vehicle.py` args, mounts, ports, Compose services, and any temporary
+generated files.
+
+The schema should allow both file-backed and inline definitions for mission,
+fence, and rally artifacts, but enforce exactly one form per artifact. For
+example, `mission.file` and `mission.items` must be mutually exclusive. The
+same rule applies to `fence.file` versus inline `fence.fences` / `fence.items`,
+and `rally.file` versus inline `rally.points` / `rally.items`. Inline artifacts
+should be normalized by tooling into generated runtime files, then fed into the
+same low-level env vars as file-backed artifacts.
+
+Parameter config is the deliberate exception to strict either-or. Params should
+support both ordered `files` and a final inline `set` map because parameter
+layering is native to the workflow and override order is clear.
+
+Lua should be referenced as code files rather than embedded in JSON. Structured
+Lua config can live in the manifest, then be rendered into a small config file
+or parameter set consumed by project-provided scripts. This keeps code as code
+and scenario data as data.
+
+The same idea should scale from one vehicle bundle to a fleet manifest that
+references many per-vehicle manifests and expands them into one Compose service
+per SITL instance.
+
+
 ## Runtime Analysis Artifacts
 
 Post-run analysis artifacts have separate producers:

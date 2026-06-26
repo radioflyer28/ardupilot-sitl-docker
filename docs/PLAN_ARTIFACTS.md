@@ -198,6 +198,74 @@ should generate them from a clearer per-vehicle config rather than asking users
 to hand-maintain large Compose env blocks.
 
 
+## Manifest Artifact Forms
+
+The future per-vehicle manifest should support both file references and inline
+definitions for mission, fence, and rally artifacts. It must enforce exactly
+one form per artifact so generation is deterministic:
+
+```json
+{
+  "mission": {
+    "file": "missions/survey.waypoints"
+  }
+}
+```
+
+or:
+
+```json
+{
+  "mission": {
+    "items": [
+      {
+        "command": "MAV_CMD_NAV_TAKEOFF",
+        "frame": "relative",
+        "alt": 20
+      },
+      {
+        "command": "MAV_CMD_NAV_WAYPOINT",
+        "frame": "relative",
+        "lat": 37.1973,
+        "lon": -80.5782,
+        "alt": 40
+      }
+    ]
+  }
+}
+```
+
+The schema should reject ambiguous artifacts such as a `mission` object with
+both `file` and `items`. Apply the same rule to:
+
+- `fence.file` versus inline `fence.fences` or raw `fence.items`
+- `rally.file` versus inline `rally.points` or raw `rally.items`
+
+File-backed artifacts should pass through as env vars such as `MISSION_FILE`,
+`FENCE_FILE`, and `RALLY_FILE`. Inline artifacts should be rendered to generated
+runtime files, then passed through the same env vars. This keeps the runtime
+interface small while allowing compact one-file scenarios.
+
+Params are intentionally different. A manifest can support both ordered param
+files and a final inline override map because that merge behavior is clear:
+
+```json
+{
+  "params": {
+    "files": ["base.parm", "controller.parm"],
+    "set": {
+      "SCR_ENABLE": 1,
+      "FENCE_ENABLE": 1
+    }
+  }
+}
+```
+
+Lua should stay file-backed for scripts. Structured Lua config can live in the
+manifest and be rendered into a generated config file or params consumed by a
+script, but the Lua source itself should remain a normal file.
+
+
 ## One-Off Vs Fleet Configuration
 
 Use direct env vars for a single vehicle or a quick override:

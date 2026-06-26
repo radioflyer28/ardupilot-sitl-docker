@@ -22,9 +22,27 @@ This file tracks likely improvements. Keep design rationale in
   mission.
 - Add import support for common ground-station fence/rally export formats after
   the project-owned JSON examples have had real use.
-- Consider a future `SCENARIO_FILE` that references all per-vehicle artifacts
-  in one place, with env vars retained as direct overrides.
-- Add a fleet/scenario config format that can generate Compose services. Env
+- Add a JSON Schema for a per-vehicle SITL manifest. The manifest should
+  reference native artifacts such as params, model JSON, `vehicleinfo.json`,
+  mission, fence, rally, and Lua script files rather than embedding or
+  replacing those formats by default.
+- In that schema, support either file references or inline definitions for
+  mission, fence, and rally artifacts, but enforce mutual exclusion with
+  `oneOf`-style validation. Reject ambiguous objects such as `mission.file`
+  plus `mission.items`, `fence.file` plus `fence.fences`, or `rally.file` plus
+  `rally.points`.
+- Preserve params as the explicit layering exception: support ordered param
+  `files` plus a final inline `set` map for overrides.
+- Add checked-in manifest examples for a simple Copter bundle, an initial-state
+  bundle, and mission/fence/rally bundles that demonstrate both file-backed and
+  inline artifact forms.
+- Add a validator/generator that reads a per-vehicle manifest and emits the
+  current low-level runtime interface: env vars, `sim_vehicle.py` args, mounts,
+  artifact paths, and any temporary generated params, plan artifacts, or Lua
+  config.
+- Consider a future `SCENARIO_FILE` or `SITL_MANIFEST` env var that points to a
+  per-vehicle manifest, with direct env vars retained as explicit overrides.
+- Add a fleet/scenario manifest format that can generate Compose services. Env
   vars should remain the low-level interface for one-off SITLs, while fleet
   config manages repeated per-vehicle settings and artifact paths.
 - Add a first-class artifact output convention for generated Compose services,
