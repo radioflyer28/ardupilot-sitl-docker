@@ -1,3 +1,4 @@
+ardupilot/
 .buildx-cache/
 dist/images/
 *.tar

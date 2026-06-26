@@ -2,8 +2,7 @@ ArduPilot SITL Docker Images
 ============================
 
 This repository builds Docker images for running pre-built ArduPilot
-Software-in-the-Loop (SITL) vehicles. The current image flow is centered on
-`Dockerfile_new`, which builds ArduPilot in a heavy builder stage and copies the
+Software-in-the-Loop (SITL) vehicles. The current image flow is centered on building ArduPilot in a heavy builder stage and copies the
 pre-built SITL tree into a smaller runtime stage.
 
 The runtime image is meant to start quickly with `--no-rebuild`. It does not
@@ -96,7 +95,7 @@ Script environment overrides:
 IMAGE_REPO   Image repo/name. Default: ardupilot-sitl
 OUTPUT_DIR   Archive output directory. Default: dist/images
 CACHE_DIR    BuildKit local cache directory. Default: .buildx-cache
-DOCKERFILE   Dockerfile path. Default: Dockerfile_new
+DOCKERFILE   Dockerfile path. Default: Dockerfile
 BASE_IMAGE   Builder/runtime base image. Default: Dockerfile default
 TAG          Builder/runtime base tag. Default: Dockerfile default
 WAF_JOBS     Waf parallel jobs. Default: Dockerfile default
@@ -117,7 +116,7 @@ Manual Docker Builds
 Build the default image:
 
 ```bash
-docker buildx build -f Dockerfile_new \
+docker buildx build -f Dockerfile \
   --build-arg WAF_JOBS=8 \
   -t ardupilot-sitl:latest \
   --load .
@@ -126,7 +125,7 @@ docker buildx build -f Dockerfile_new \
 Build a single target:
 
 ```bash
-docker buildx build -f Dockerfile_new \
+docker buildx build -f Dockerfile \
   --build-arg ARDUPILOT_REF=Copter-4.6.3 \
   --build-arg WAF_TARGET=copter \
   --build-arg WAF_JOBS=8 \
@@ -137,7 +136,7 @@ docker buildx build -f Dockerfile_new \
 Build all standard targets by omitting `WAF_TARGET`:
 
 ```bash
-docker buildx build -f Dockerfile_new \
+docker buildx build -f Dockerfile \
   --build-arg WAF_JOBS=8 \
   -t ardupilot-sitl:all \
   --load .
@@ -146,7 +145,7 @@ docker buildx build -f Dockerfile_new \
 Use the lighter Debian slim base:
 
 ```bash
-docker buildx build -f Dockerfile_new \
+docker buildx build -f Dockerfile \
   --build-arg BASE_IMAGE=debian \
   --build-arg TAG=bookworm-slim \
   --build-arg WAF_TARGET=copter \
@@ -159,7 +158,7 @@ docker buildx build -f Dockerfile_new \
 Build Args
 ----------
 
-`Dockerfile_new` supports these main build args:
+`Dockerfile` supports these main build args:
 
 ```text
 BASE_IMAGE             Base image family. Default: ubuntu
@@ -177,9 +176,7 @@ WAF_JOBS               Parallel waf jobs. Default: 2
 DO_AP_STM_ENV          Install STM32 toolchain. Default: 0
 ```
 
-The Dockerfile uses BuildKit cache mounts for apt, pip, Gradle, and ccache. The
-repository also includes `.dockerignore` so the local `./ardupilot` checkout is
-not sent as Docker build context.
+The Dockerfile uses BuildKit cache mounts for apt, pip, Gradle, and ccache. The repository also includes `.dockerignore` so the local `./ardupilot` checkout is not sent as Docker build context.
 
 
 BuildKit Cache
@@ -188,7 +185,7 @@ BuildKit Cache
 For the first cached build, use only `--cache-to`:
 
 ```bash
-docker buildx build -f Dockerfile_new \
+docker buildx build -f Dockerfile \
   --build-arg WAF_TARGET=copter \
   --build-arg WAF_JOBS=8 \
   --cache-to type=local,dest=.buildx-cache,mode=max \
@@ -199,7 +196,7 @@ docker buildx build -f Dockerfile_new \
 For later builds, use both cache flags:
 
 ```bash
-docker buildx build -f Dockerfile_new \
+docker buildx build -f Dockerfile \
   --build-arg WAF_TARGET=copter \
   --build-arg WAF_JOBS=8 \
   --cache-from type=local,src=.buildx-cache \
@@ -242,6 +239,46 @@ both:
 docker run ... -e INSTANCE=0 -e SYSID=1 -p 5760:5760/tcp ...
 docker run ... -e INSTANCE=1 -e SYSID=2 -p 5770:5770/tcp ...
 docker run ... -e INSTANCE=2 -e SYSID=3 -p 5780:5780/tcp ...
+```
+
+
+Docker Compose: Multiple SITL Instances
+---------------------------------------
+
+`compose.sitl.yml` starts three headless SITL containers with direct TCP MAVLink
+ports:
+
+```text
+sitl-0 -> INSTANCE=0, SYSID=1, TCP 5760
+sitl-1 -> INSTANCE=1, SYSID=2, TCP 5770
+sitl-2 -> INSTANCE=2, SYSID=3, TCP 5780
+```
+
+Start them:
+
+```bash
+docker compose -f compose.sitl.yml up -d
+```
+
+Use a different image tag:
+
+```bash
+ARDUPILOT_SITL_IMAGE=ardupilot-sitl:copter-4.6.3 \
+  docker compose -f compose.sitl.yml up -d
+```
+
+Connect from the host:
+
+```bash
+mavproxy.py --master=tcp:127.0.0.1:5760
+mavproxy.py --master=tcp:127.0.0.1:5770
+mavproxy.py --master=tcp:127.0.0.1:5780
+```
+
+Stop them:
+
+```bash
+docker compose -f compose.sitl.yml down
 ```
 
 

@@ -1,0 +1,33 @@
+services:
+  sitl-0:
+    image: ${ARDUPILOT_SITL_IMAGE:-ardupilot-sitl:copter-4.6.3}
+    env_file:
+      - env.list
+    environment:
+      INSTANCE: 0
+      SYSID: 1
+      NO_MAVPROXY: 1
+    ports:
+      - "5760:5760/tcp"
+
+  sitl-1:
+    image: ${ARDUPILOT_SITL_IMAGE:-ardupilot-sitl:copter-4.6.3}
+    env_file:
+      - env.list
+    environment:
+      INSTANCE: 1
+      SYSID: 2
+      NO_MAVPROXY: 1
+    ports:
+      - "5770:5770/tcp"
+
+  sitl-2:
+    image: ${ARDUPILOT_SITL_IMAGE:-ardupilot-sitl:copter-4.6.3}
+    env_file:
+      - env.list
+    environment:
+      INSTANCE: 2
+      SYSID: 3
+      NO_MAVPROXY: 1
+    ports:
+      - "5780:5780/tcp"
