@@ -24,6 +24,8 @@ catalogs.
 - Each bundle must include a local `vehicleinfo.json`.
 - Relative paths inside bundle `vehicleinfo.json` should point to files in the
   same bundle directory.
+- Runtime examples and bundles may use `scripts/` for Lua and `missions/` for
+  QGC WPL 110 mission files.
 - Do not check in full generated catalogs unless the user explicitly asks.
 
 

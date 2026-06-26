@@ -247,6 +247,7 @@ VEHICLEINFO_JSON Optional mounted vehicleinfo.json path
 MODEL           Optional sim_vehicle.py --model override
 PARAM_FILE      Optional file passed with --add-param-file
 LUA_SCRIPT      Optional Lua script copied into ArduPilot scripts/ at startup
+MISSION_FILE    Optional QGC WPL 110 mission loaded through Lua scripting
 LAT             Custom home latitude
 LON             Custom home longitude
 ALT             Custom home altitude in meters
@@ -422,6 +423,63 @@ docker run -it --rm \
 The example script applies one pose when the vehicle arms. Edit
 `scripts/initial-state.lua` to change the position, attitude, body-frame
 velocity, body rates, trigger, or numeric flight mode.
+
+
+Runtime Missions
+----------------
+
+Set `MISSION_FILE` to load a MAVLink plain-text mission at startup. The file
+must use the `QGC WPL 110` mission format:
+
+```text
+configs/my_quad/
+  my_quad.parm
+  missions/
+    survey.waypoints
+```
+
+Run it:
+
+```bash
+docker run -it --rm \
+  --env-file env.list \
+  -v "$PWD/configs/my_quad:/configs:ro" \
+  -e PARAM_FILE=my_quad.parm \
+  -e MISSION_FILE=missions/survey.waypoints \
+  ardupilot-sitl:copter-4.6.3
+```
+
+Absolute `MISSION_FILE` paths are used as-is. Relative paths are resolved under
+`SITL_CONFIG_DIR`. The wrapper stages the selected mission into the ArduPilot
+working `missions/` directory and installs an image-provided `load-mission.lua`
+script before `sim_vehicle.py` starts.
+
+Mission loading uses ArduPilot Lua scripting, so include `SCR_ENABLE 1` in the
+selected params. Unlike MAVProxy `wp load`, this path also works when
+`NO_MAVPROXY=1`.
+
+This repo includes a copyable mission example:
+
+```text
+configs/examples/mission/
+  mission.parm
+  missions/
+    simple-copter.waypoints
+```
+
+Run it against the stock Copter quad frame:
+
+```bash
+docker run -it --rm \
+  --env-file env.list \
+  -v "$PWD/configs/examples/mission:/configs:ro" \
+  -e PARAM_FILE=mission.parm \
+  -e MISSION_FILE=missions/simple-copter.waypoints \
+  ardupilot-sitl:copter-4.6.3
+```
+
+The mission format is documented by MAVLink:
+<https://mavlink.io/en/file_formats/>.
 
 
 Reference Config Bundles

@@ -28,16 +28,30 @@ Checked-in runtime examples:
 
 ```text
 examples/initial-state  Lua initial-state script plus params that enable it
+examples/mission        QGC WPL 110 mission plus params that enable loading it
 ```
 
-Mount `examples/initial-state` as `SITL_CONFIG_DIR` when you want to try the
-example against a stock ArduPilot frame:
+Mount an example as `SITL_CONFIG_DIR` when you want to try it against a stock
+ArduPilot frame.
+
+Initial state:
 
 ```bash
 docker run -it --rm \
   --env-file env.list \
   -v "$PWD/configs/examples/initial-state:/configs:ro" \
   -e PARAM_FILE=initial-state.parm \
+  ardupilot-sitl:copter-4.6.3
+```
+
+Mission:
+
+```bash
+docker run -it --rm \
+  --env-file env.list \
+  -v "$PWD/configs/examples/mission:/configs:ro" \
+  -e PARAM_FILE=mission.parm \
+  -e MISSION_FILE=missions/simple-copter.waypoints \
   ardupilot-sitl:copter-4.6.3
 ```
 

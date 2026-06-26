@@ -17,6 +17,9 @@ This file tracks likely improvements. Keep design rationale in
   example. The current recommendation is generated or externally mounted config
   consumed by a Lua script that calls `sim:set_pose` on arm; see
   `docs/INITIAL_STATE.md`.
+- Add optional mission-start controls such as `MISSION_START_INDEX` or
+  `MISSION_MODE=auto`, if users need the wrapper to do more than preload the
+  mission.
 
 
 ## ArduPilot Integration

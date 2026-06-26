@@ -8,3 +8,4 @@
 !docker/
 !docker/resolve-sitl-config.py
 !docker/install-sitl-lua.sh
+!docker/load-mission.lua

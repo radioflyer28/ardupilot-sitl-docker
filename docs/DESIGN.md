@@ -91,6 +91,8 @@ Direct file overrides:
 - `MODEL` is passed as `--model`
 - `PARAM_FILE` is passed as `--add-param-file`
 - relative `PARAM_FILE` paths resolve under `SITL_CONFIG_DIR`
+- `MISSION_FILE` stages a QGC WPL 110 mission file for the runtime Lua mission
+  loader
 
 Mounted config bundles:
 
@@ -106,24 +108,30 @@ This preserves an ArduPilot-native shape for reusable vehicles while avoiding
 runtime rebuilds.
 
 
-## Runtime Lua And Initial State
+## Runtime Lua, Missions, And Initial State
 
-ArduPilot SITL can be moved into an airborne state through Lua scripting rather
-than through `sim_vehicle.py` alone. The image preserves that as a runtime
-capability:
+ArduPilot SITL can load missions and move into an airborne state through Lua
+scripting rather than through `sim_vehicle.py` alone. The image preserves that
+as a runtime capability:
 
 - mounted config bundles may include a `scripts/` directory
 - `LUA_SCRIPT` selects one explicit script, with relative paths resolved under
   `SITL_CONFIG_DIR`
+- `MISSION_FILE` selects one QGC WPL 110 mission file, with relative paths
+  resolved under `SITL_CONFIG_DIR`
 - selected scripts are copied into the ArduPilot working `scripts/` directory
   before `sim_vehicle.py` starts
+- selected missions are staged into the ArduPilot working `missions/`
+  directory, and an image-provided Lua loader imports them through the mission
+  API
 
 The wrapper installs scripts only; params still control whether ArduPilot
-scripting runs. Initial-state scripts that call `sim:set_pose` also need the
-SITL AHRS backend selected by params.
+scripting runs. Mission loading needs `SCR_ENABLE=1`; initial-state scripts
+that call `sim:set_pose` also need the SITL AHRS backend selected by params.
 
 The repo includes a small copyable initial-state example under
-`configs/examples/initial-state/`.
+`configs/examples/initial-state/` and a mission example under
+`configs/examples/mission/`.
 
 The detailed research and recommended integration path live in
 `docs/INITIAL_STATE.md`.

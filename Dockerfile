@@ -186,7 +186,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     python3-pexpect \
     screen
 
-RUN install -d -m 0755 /usr/local/bin /configs \
+RUN install -d -m 0755 /usr/local/bin /usr/local/share/ardupilot-sitl /configs \
     && chown -R ${USER_NAME}:${USER_NAME} /home/${USER_NAME} /${USER_NAME}
 
 COPY --from=builder --chown=${USER_NAME}:${USER_NAME} /home/${USER_NAME}/ardupilot /home/${USER_NAME}/ardupilot
@@ -195,6 +195,7 @@ COPY --from=builder --chown=${USER_NAME}:${USER_NAME} /home/${USER_NAME}/.ardupi
 COPY --from=builder --chown=${USER_NAME}:${USER_NAME} /home/${USER_NAME}/Micro-XRCE-DDS-Gen/scripts /home/${USER_NAME}/Micro-XRCE-DDS-Gen/scripts
 COPY docker/resolve-sitl-config.py /usr/local/bin/resolve-sitl-config.py
 COPY docker/install-sitl-lua.sh /usr/local/bin/install-sitl-lua.sh
+COPY docker/load-mission.lua /usr/local/share/ardupilot-sitl/load-mission.lua
 
 RUN printf '%s\n' \
         'source ~/.ardupilot_env' \
@@ -259,5 +260,6 @@ ENV VEHICLEINFO_JSON=
 ENV MODEL=
 ENV PARAM_FILE=
 ENV LUA_SCRIPT=
+ENV MISSION_FILE=
 
 ENTRYPOINT ["/usr/local/bin/ardupilot_entrypoint.sh"]

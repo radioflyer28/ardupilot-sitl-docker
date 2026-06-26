@@ -185,7 +185,8 @@ Mission:
 - Lua mission APIs include `mission:clear`, `mission:set_item`, and
   `mission:set_current_cmd`.
 - ArduPilot ships `libraries/AP_Scripting/examples/mission-load.lua` for loading
-  QGC WPL files.
+  QGC WPL files, and this repo includes an adapted image-provided loader wired
+  to the `MISSION_FILE` runtime env var.
 - MAVProxy can load missions with `wp load`, but that path depends on MAVProxy
   being enabled or running externally.
 

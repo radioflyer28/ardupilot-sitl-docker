@@ -39,6 +39,8 @@ Key findings:
   dynamics updates.
 - Mission loading is separate and can be handled through Lua mission APIs,
   MAVLink, or MAVProxy.
+- This repo implements `MISSION_FILE` with an image-provided Lua loader for
+  QGC WPL 110 mission files.
 
 Implemented recommendations:
 
