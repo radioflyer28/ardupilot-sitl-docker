@@ -1,9 +1,13 @@
-ArduPilot SITL Docker Images
-============================
+SITL Docker Images
+==================
 
-This repository builds Docker images for running pre-built ArduPilot
-Software-in-the-Loop (SITL) vehicles. The current image flow is centered on building ArduPilot in a heavy builder stage and copies the
-pre-built SITL tree into a smaller runtime stage.
+This repository builds Docker images for running pre-built autopilot
+Software-in-the-Loop (SITL) vehicles. The mature path is ArduPilot SITL. A v1
+PX4 Simulator-In-Hardware (SIH) sibling image is also available for users who
+want a PX4-native, headless runtime.
+
+The ArduPilot image flow is centered on building ArduPilot in a heavy builder
+stage and copying the pre-built SITL tree into a smaller runtime stage.
 
 The runtime image is meant to start quickly with `--no-rebuild`. It does not
 include a full compiler toolchain, so manual `sim_vehicle.py` runs inside the
@@ -227,6 +231,161 @@ docker buildx build -f Dockerfile \
 
 The release build script handles this automatically: it imports the cache if
 `.buildx-cache/index.json` exists and exports cache on every build.
+
+
+PX4 SIH Image
+-------------
+
+`Dockerfile.px4-sih` builds a prebuilt PX4 Simulator-In-Hardware runtime. This
+is a sibling image path, not a replacement for the ArduPilot image.
+
+Use `scripts/build-px4-sih-image.sh` to build one PX4 SIH model/ref image.
+It mirrors the ArduPilot release script's archive, local, registry, cache, and
+zstd compression behavior.
+
+```bash
+scripts/build-px4-sih-image.sh <model> <version-or-ref>
+```
+
+Examples:
+
+```bash
+PX4_JOBS=8 scripts/build-px4-sih-image.sh sihsim_quadx v1.16.0
+PX4_JOBS=8 scripts/build-px4-sih-image.sh sihsim_quadx 1.16.0
+IMAGE_OUTPUT=local scripts/build-px4-sih-image.sh sihsim_quadx main
+```
+
+The numeric version form `1.16.0` is normalized to PX4's tag form `v1.16.0`.
+The default archive output writes:
+
+```text
+dist/images/px4-sih-sihsim-quadx-v1.16.0.docker.tar.zst
+```
+
+Restore an exported PX4 image:
+
+```bash
+zstd -dc dist/images/px4-sih-sihsim-quadx-v1.16.0.docker.tar.zst | docker load
+```
+
+Push a registry image with zstd-compressed OCI layers:
+
+```bash
+IMAGE_OUTPUT=registry \
+IMAGE_REPO=ghcr.io/example/px4-sih \
+PX4_JOBS=8 \
+scripts/build-px4-sih-image.sh sihsim_quadx v1.16.0
+```
+
+PX4 build script environment overrides:
+
+```text
+IMAGE_REPO          Image repo/name. Default: px4-sih
+IMAGE_OUTPUT        Output mode: archive, local, or registry. Default: archive
+OUTPUT_DIR          Archive output directory. Default: dist/images
+CACHE_DIR           BuildKit local cache directory. Default: .buildx-cache/px4-sih
+DOCKERFILE          Dockerfile path. Default: Dockerfile.px4-sih
+PX4_BUILDER_IMAGE   PX4 build image. Default: Dockerfile default
+RUNTIME_BASE_IMAGE  Runtime base image family. Default: Dockerfile default
+RUNTIME_TAG         Runtime base tag. Default: Dockerfile default
+PX4_REPO            PX4 git repository URL. Default: Dockerfile default
+PX4_CLONE_DEPTH     Shallow clone depth. Default: Dockerfile default
+PX4_SUBMODULE_PATHS Space-separated submodules to initialize. Default: Dockerfile default
+PX4_BUILD_TARGET    PX4 build target. Default: inferred from PX4_REF
+PX4_BUILD_DIR       PX4 build output directory. Default: inferred from target
+PX4_JOBS            Parallel make jobs. Default: Dockerfile default
+ZSTD_LEVEL          zstd compression level for image layers and archives. Default: 3
+ZSTD_LONG           zstd --long window. Default: 27
+```
+
+Manual PX4 buildx example:
+
+```bash
+docker buildx build -f Dockerfile.px4-sih \
+  --build-arg PX4_REF=v1.16.0 \
+  --build-arg PX4_SIM_MODEL=sihsim_quadx \
+  --build-arg PX4_JOBS=8 \
+  -t px4-sih:sihsim-quadx-v1.16.0 \
+  --load .
+```
+
+PX4-specific build args:
+
+```text
+PX4_BUILDER_IMAGE PX4 build image. Default: px4io/px4-dev-base-jammy:latest
+RUNTIME_BASE_IMAGE Runtime base image family. Default: ubuntu
+RUNTIME_TAG        Runtime base tag. Default: 22.04
+PX4_REPO           PX4 git repository URL
+PX4_REF            PX4 branch, tag, or commit. Default: main
+PX4_CLONE_DEPTH    Shallow clone depth. Default: 1
+PX4_SUBMODULE_PATHS Space-separated submodules initialized for the build
+PX4_BUILD_TARGET   PX4 build target. Default: px4_sitl_sih in Dockerfile
+PX4_BUILD_DIR      PX4 build output directory. Default: px4_sitl_sih
+PX4_SIM_MODEL      Runtime PX4 SIH model default. Default: sihsim_quadx
+PX4_JOBS           Parallel make jobs. Default: 2
+```
+
+The build script infers release-compatible defaults. For `main` or `master`,
+it uses the newer `PX4_BUILD_TARGET=px4_sitl_sih` and
+`PX4_BUILD_DIR=px4_sitl_sih`. For release refs such as `v1.16.0`, it uses
+`PX4_BUILD_TARGET=px4_sitl` and `PX4_BUILD_DIR=px4_sitl_default`, matching the
+PX4 v1.16 SIH docs.
+
+During image build, the Dockerfile compiles only `PX4_BUILD_TARGET`. It does
+not pass the model name to `make`, because PX4's documented
+`make px4_sitl sihsim_quadx` style command is a build-and-run developer
+workflow. The Docker image sets `PX4_SIM_MODEL` for runtime instead.
+
+The PX4 Dockerfile intentionally avoids `git clone --recursive`. It initializes
+only the submodules expected for a headless SIH build and skips simulator stacks
+such as Gazebo Classic, Gazebo, jMAVSim, FlightGear, and JSBSim. This keeps the
+first build faster and prevents unused simulator assets from influencing the
+builder and final runtime image size. If a PX4 release needs a different set,
+override `PX4_SUBMODULE_PATHS`.
+
+Run with PX4's recommended simple Docker networking path:
+
+```bash
+docker run -it --rm --network host px4-sih:sihsim-quadx
+```
+
+PX4 SIH runtime envs intentionally reuse the common names where PX4 has native
+equivalents:
+
+```text
+INSTANCE      PX4 instance number, passed as px4 -i. Default: 0
+SYSID         Optional MAVLink system ID, mapped to PX4_PARAM_MAV_SYS_ID
+MODEL         Optional PX4_SIM_MODEL override. Default: sihsim_quadx
+LAT           Home latitude, mapped to PX4_HOME_LAT
+LON           Home longitude, mapped to PX4_HOME_LON
+ALT           Home altitude, mapped to PX4_HOME_ALT
+SPEEDUP       Speed factor, mapped to PX4_SIM_SPEED_FACTOR. Default: 1
+PX4_RUN_DIR   Explicit PX4 working directory
+ARTIFACTS_DIR Parent artifact directory; wrapper uses instance_<INSTANCE>
+```
+
+When `SYSID` is unset, PX4 assigns `MAV_SYS_ID=INSTANCE+1`. Set `SYSID` only
+when you want to override that native instance behavior.
+
+PX4-native parameter overrides can be passed directly:
+
+```bash
+docker run -it --rm --network host \
+  -e LAT=37.1971467 \
+  -e LON=-80.5780381 \
+  -e ALT=618 \
+  -e SPEEDUP=2 \
+  -e PX4_PARAM_SIH_WIND_N=2 \
+  -e PX4_PARAM_SIH_WIND_E=0 \
+  px4-sih:sihsim-quadx
+```
+
+Available SIH model names come from PX4 and include `sihsim_quadx`,
+`sihsim_airplane`, `sihsim_hexa`, `sihsim_xvert`, `sihsim_standard_vtol`, and
+`sihsim_rover_ackermann`. Treat models other than `sihsim_quadx` as
+experimental until validated against the PX4 release you are using.
+
+More PX4 SIH research and design notes live in `docs/PX4_SIH.md`.
 
 
 Runtime Configuration
@@ -818,5 +977,11 @@ SITL initial-state research and runtime Lua recommendations live in
 
 Runtime mission, fence, rally, and fleet artifact decisions live in
 `docs/PLAN_ARTIFACTS.md`.
+
+PX4 SIH runtime research and design notes live in `docs/PX4_SIH.md`.
+
+Notable project changes live in `docs/CHANGELOG.md`.
+
+The chronological session/dev log lives in `docs/SESSION_SUMMARY.md`.
 
 Future improvements and backlog items live in `docs/FUTURE_WORK.md`.

@@ -11,6 +11,9 @@ Owns repository helper scripts for release builds and config bundle generation.
 - `build-release-image.sh`: builds one ArduPilot release image and either
   exports it as a zstd-compressed Docker archive or pushes an OCI image with
   zstd-compressed layers.
+- `build-px4-sih-image.sh`: builds one PX4 SIH image for a selected model and
+  PX4 release/ref, with the same archive/local/registry output modes and zstd
+  compression behavior as the ArduPilot release script.
 - `populate-config-bundles.py`: generates mountable SITL config bundles from
   the local ArduPilot checkout.
 
@@ -33,7 +36,8 @@ Owns repository helper scripts for release builds and config bundle generation.
 
 ## Verification
 
-- Shell syntax: `bash -n scripts/build-release-image.sh`
+- Shell syntax:
+  `bash -n scripts/build-release-image.sh scripts/build-px4-sih-image.sh`
 - Python syntax:
   `python3 -m py_compile scripts/populate-config-bundles.py`
 - Generator smoke test:

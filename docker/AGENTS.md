@@ -17,6 +17,10 @@ Owns helper code copied into the runtime image.
   through MAVLink mission protocol after SITL starts.
 - `load-mission.lua`: image-provided ArduPilot Lua loader for staged QGC WPL
   110 mission files.
+- `px4-sih-entrypoint.sh`: PX4 SIH entrypoint that runs the PX4 wrapper by
+  default and executes explicit commands for debug shells.
+- `run-px4-sih.sh`: starts the prebuilt PX4 SIH binary with this repo's shared
+  low-level env conventions where PX4 has native equivalents.
 
 
 ## Local Contracts
@@ -49,6 +53,12 @@ Owns helper code copied into the runtime image.
   - use project-owned JSON as the checked-in example format
   - support dry-run parsing without requiring `pymavlink` on the host
   - connect through `PLAN_UPLOAD_MASTER` when set
+- Preserve PX4 SIH runtime behavior:
+  - `MODEL` selects `PX4_SIM_MODEL`
+  - `INSTANCE` maps to `px4 -i`
+  - `LAT`, `LON`, `ALT`, and `SPEEDUP` map to PX4's native env vars
+  - `SYSID` maps to `PX4_PARAM_MAV_SYS_ID` only when explicitly set
+  - `PX4_RUN_DIR` or `ARTIFACTS_DIR` chooses the PX4 working directory
 
 
 ## Work Guidance
@@ -73,6 +83,8 @@ Owns helper code copied into the runtime image.
   `bash -n docker/install-sitl-lua.sh`
 - Run a Lua syntax check for `docker/load-mission.lua` when `lua` or `luac` is
   available.
+- Run:
+  `bash -n docker/px4-sih-entrypoint.sh docker/run-px4-sih.sh`
 - Smoke-test against a temporary ArduPilot-like directory when changing
   resolution or Lua install behavior.
 

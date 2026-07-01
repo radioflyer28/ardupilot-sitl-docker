@@ -430,8 +430,8 @@ Prompt:
 
 Answer and changes:
 
-- Treated `SESSION_SUMMARY.md` as a dev log and appended recent runtime-config
-  work.
+- Treated `docs/SESSION_SUMMARY.md` as a dev log and appended recent
+  runtime-config work.
 - Added `docs/DESIGN.md` to capture architecture, philosophy, trade-offs, and
   major decisions.
 - Added `docs/FUTURE_WORK.md` as the action-oriented backlog.
@@ -480,3 +480,111 @@ python3 -m json.tool configs/frames/arduplane-plane/vehicleinfo.json
 
 Full image builds were generally not run unless explicitly requested, because
 they clone/build ArduPilot and download external dependencies.
+
+
+## Documentation History
+
+Prompt:
+
+> Move `SESSION_SUMMARY.md` to `docs`, and create a useful changelog sourced
+> from commit history, docs, and the session summary.
+
+Answer and changes:
+
+- Moved the chronological session/dev log to `docs/SESSION_SUMMARY.md`.
+- Added `docs/CHANGELOG.md` as the release-facing history.
+- Built the initial changelog from:
+  - git commit history
+  - durable docs such as `docs/DESIGN.md`, `docs/INITIAL_STATE.md`, and
+    `docs/PLAN_ARTIFACTS.md`
+  - this session summary
+- Updated `AGENTS.md`, `docs/AGENTS.md`, `docs/DESIGN.md`, and `README.md` to
+  reference the new documentation layout.
+
+
+## PX4 SIH Runtime
+
+Prompt:
+
+> Research PX4 and its SIH SITL environment and determine if we can create a
+> similar Dockerfile, while standardizing interfaces and conventions where
+> possible.
+
+Answer and changes:
+
+- Researched PX4 SIH docs and PX4-Autopilot startup scripts.
+- Found that PX4 SIH can be packaged as a prebuilt runtime image around
+  `px4_sitl_sih` and `sihsim_quadx`.
+- Mapped common env conventions:
+  - `INSTANCE` -> `px4 -i`
+  - `SYSID` -> `PX4_PARAM_MAV_SYS_ID`, only when explicitly set
+  - `LAT`, `LON`, `ALT` -> `PX4_HOME_LAT`, `PX4_HOME_LON`, `PX4_HOME_ALT`
+  - `SPEEDUP` -> `PX4_SIM_SPEED_FACTOR`
+  - `MODEL` -> `PX4_SIM_MODEL`
+- Implemented `Dockerfile.px4-sih`, `docker/px4-sih-entrypoint.sh`, and
+  `docker/run-px4-sih.sh`.
+- Added `docs/PX4_SIH.md` and updated README, design, research, future work,
+  changelog, and DOX ownership docs.
+
+Prompt:
+
+> Make a build script for the PX4 Dockerfile like we did for ArduPilot.
+
+Answer and changes:
+
+- Recommended keeping ArduPilot and PX4 build scripts separate for now because
+  their build args, release refs, and target/model semantics differ.
+- Added `scripts/build-px4-sih-image.sh`.
+- Matched the ArduPilot script's `IMAGE_OUTPUT=archive|local|registry`,
+  BuildKit cache, zstd layer compression, and zstd Docker archive behavior.
+- Added PX4-specific inputs such as `PX4_REF`, `PX4_SIM_MODEL`,
+  `PX4_BUILD_TARGET`, `PX4_BUILDER_IMAGE`, and `PX4_JOBS`.
+- Updated README, `docs/PX4_SIH.md`, `docs/FUTURE_WORK.md`, changelog, and DOX
+  script ownership/verification notes.
+
+Prompt:
+
+> The main goal for only cloning needed/minimal submodules is to reduce build
+> time and image size too; the build size is quite important.
+
+Answer and changes:
+
+- Stopped the first PX4 build after it began cloning simulator submodules such
+  as Gazebo Classic.
+- Updated `Dockerfile.px4-sih` to clone PX4 without `--recursive`.
+- Added `PX4_SUBMODULE_PATHS` so the Dockerfile initializes only a configurable
+  SIH-oriented submodule set.
+- Set `GIT_SUBMODULES_ARE_EVIL=1` during `make` so PX4's submodule checker does
+  not pull every registered submodule back in.
+- Removed additional build metadata from the copied PX4 build tree before the
+  runtime stage.
+
+Prompt:
+
+> PX4 `v1.16.0` build failed because `px4_sitl_sih` was not found.
+
+Answer and changes:
+
+- Verified that PX4 v1.16 SIH docs use `make px4_sitl sihsim_quadx`, while
+  PX4 `main` uses the newer `px4_sitl_sih` target.
+- Added `PX4_BUILD_DIR` because `px4_sitl` writes to `build/px4_sitl_default`.
+- Updated the PX4 build script to infer:
+  - `main` / `master`: `PX4_BUILD_TARGET=px4_sitl_sih`,
+    `PX4_BUILD_DIR=px4_sitl_sih`
+  - release refs such as `v1.16.0`: `PX4_BUILD_TARGET=px4_sitl`,
+    `PX4_BUILD_DIR=px4_sitl_default`
+- Updated the runtime wrapper to find the copied PX4 binary via
+  `PX4_BUILD_DIR`.
+
+Prompt:
+
+> The PX4 build was still stuck after 5000 seconds at the make step.
+
+Answer and changes:
+
+- Diagnosed that PX4's documented `make <target> <model>` SIH commands are
+  build-and-run workflows.
+- Updated `Dockerfile.px4-sih` to compile only `PX4_BUILD_TARGET` during image
+  build.
+- Kept `PX4_SIM_MODEL` as a runtime default for `run-px4-sih.sh`, where it
+  belongs.

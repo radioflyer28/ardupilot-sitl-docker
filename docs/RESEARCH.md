@@ -139,3 +139,48 @@ Feeds:
 
 - `README.md`: user-facing commands for mounted artifact directories.
 - `docs/DESIGN.md`: durable distinction between `.BIN` and `.tlog` producers.
+
+
+## PX4 SIH Runtime
+
+Status: v1 sibling image implemented; shared manifest support still planned
+
+Detailed note:
+
+```text
+docs/PX4_SIH.md
+```
+
+Summary:
+
+PX4's Simulator-In-Hardware path can be packaged similarly to the ArduPilot
+runtime image, but it should remain a native PX4 runtime rather than a
+`sim_vehicle.py` clone. Newer PX4 `main` builds SIH with `px4_sitl_sih`; PX4
+v1.16 uses `px4_sitl` and writes to `build/px4_sitl_default`. The runtime starts
+a prebuilt `px4` binary directly with an instance number and runtime directory.
+
+Key findings:
+
+- `sihsim_quadx` is the stable/default SIH model in PX4's docs.
+- The build target and build output directory are version-sensitive.
+- PX4's `make <target> <model>` SIH commands are build-and-run workflows; image
+  builds should compile only the target and set the model at runtime.
+- PX4 uses `PX4_HOME_LAT`, `PX4_HOME_LON`, `PX4_HOME_ALT`, and
+  `PX4_SIM_SPEED_FACTOR` for common location and speed controls.
+- PX4's instance system offsets ports and assigns `MAV_SYS_ID=INSTANCE+1`
+  unless explicitly overridden.
+- PX4 applies env vars named `PX4_PARAM_<PARAM_NAME>` during POSIX startup.
+- PX4 SIH is UDP-oriented; host networking is the clearest v1 container
+  workflow.
+
+Implemented recommendations:
+
+- Add `Dockerfile.px4-sih` as a sibling multi-stage image.
+- Add PX4 SIH runtime helpers that preserve common env names where PX4 has
+  native equivalents.
+
+Remaining recommendation:
+
+- Let future shared manifest tooling generate ArduPilot or PX4 native env vars,
+  mounts, ports, artifact directories, and upload helpers from the same
+  scenario definition.

@@ -1,6 +1,7 @@
 *
 
 !Dockerfile
+!Dockerfile.px4-sih
 !Dockerfile_new
 !README.md
 !env.list
@@ -10,3 +11,5 @@
 !docker/install-sitl-lua.sh
 !docker/upload-plan-artifacts.py
 !docker/load-mission.lua
+!docker/px4-sih-entrypoint.sh
+!docker/run-px4-sih.sh

@@ -1,9 +1,11 @@
-# Design: ArduPilot SITL Docker Images
+# Design: SITL Docker Images
 
-This project builds Docker images that run pre-built ArduPilot SITL vehicles
-quickly and predictably. The main tension is between ArduPilot's rich developer
-environment and a runtime image that should be small, repeatable, and easy to
-start in automation.
+This project builds Docker images that run pre-built SITL vehicles quickly and
+predictably. ArduPilot SITL is the mature primary path; PX4 SIH is a sibling
+runtime path that should follow the same user-facing conventions where the two
+autopilots naturally overlap. The main tension is between rich upstream
+developer environments and runtime images that should be small, repeatable, and
+easy to start in automation.
 
 
 ## Goals
@@ -20,6 +22,9 @@ start in automation.
 - Preserve the ability to use SITL images as base images for larger simulation
   stacks, such as images that add ROS 2, MAVROS, companion nodes, or custom
   control logic on top of the prebuilt SITL runtime.
+- Preserve a cross-autopilot low-level convention for common controls such as
+  instance, system ID, home location, speedup, model selection, artifact
+  directories, and future mission/fence/rally upload workflows.
 - Keep the checked-in repository small while making larger generated catalogs
   easy to recreate
   (re: SITL physics config and corresponding ardupilot param files in configs/frames).
@@ -27,14 +32,14 @@ start in automation.
 
 ## Non-Goals
 
-- This image is not a full ArduPilot development environment.
-- Runtime containers are not expected to rebuild ArduPilot.
+- Runtime images are not full upstream development environments.
+- Runtime containers are not expected to rebuild the autopilot after startup.
 - The project does not fork or patch upstream ArduPilot unless there is a clear
   benefit that cannot be achieved at the wrapper layer.
 - The repo does not check in every generated frame bundle from ArduPilot.
 
 
-## Image Architecture
+## ArduPilot Image Architecture
 
 The Dockerfile uses a multi-stage build:
 
@@ -48,6 +53,52 @@ The Dockerfile uses a multi-stage build:
 This keeps release images focused on running SITL. If a user opens a shell in
 the runtime container and calls `sim_vehicle.py` manually, they should pass
 `--no-rebuild` or use `run-sitl.sh`.
+
+
+## PX4 SIH Image Architecture
+
+`Dockerfile.px4-sih` is a sibling multi-stage build for PX4's
+Simulator-In-Hardware runtime:
+
+- `builder` stage: uses a PX4 development image, clones PX4-Autopilot, updates
+  only the configured SIH-relevant submodules, and builds the configured SIH
+  target without launching a simulator model.
+- `runtime` stage: installs only lightweight runtime packages, copies the
+  prebuilt PX4 build directory, and runs PX4 through
+  `run-px4-sih.sh`.
+
+The PX4 image is not a full PX4 development environment. It starts the prebuilt
+`px4` binary directly rather than invoking `make` at runtime.
+
+The builder compiles only `PX4_BUILD_TARGET`. It does not pass
+`PX4_SIM_MODEL` as a make argument because PX4's documented
+`make <target> <model>` commands launch the simulator model after compiling.
+In this image, `PX4_SIM_MODEL` is a runtime setting consumed by PX4 startup.
+
+The PX4 builder intentionally does not use recursive clone. The default
+`PX4_SUBMODULE_PATHS` excludes external simulator stacks such as Gazebo Classic,
+Gazebo, jMAVSim, FlightGear, and JSBSim because SIH runs physics inside PX4 and
+does not need those assets. This keeps build time and image size aligned with
+the SIH-only runtime goal. The script also distinguishes the make target from
+the build directory because release refs such as PX4 v1.16 use
+`PX4_BUILD_TARGET=px4_sitl` and `PX4_BUILD_DIR=px4_sitl_default`, while newer
+PX4 `main` supports `px4_sitl_sih`.
+
+PX4 shares the common env convention only where the mapping is native and
+obvious:
+
+- `INSTANCE` maps to `px4 -i`
+- `SYSID` maps to `PX4_PARAM_MAV_SYS_ID` only when explicitly set
+- `LAT`, `LON`, and `ALT` map to `PX4_HOME_LAT`, `PX4_HOME_LON`, and
+  `PX4_HOME_ALT`
+- `SPEEDUP` maps to `PX4_SIM_SPEED_FACTOR`
+- `MODEL` maps to `PX4_SIM_MODEL`
+
+PX4-specific parameters remain available through `PX4_PARAM_*`. The wrapper
+does not pretend that PX4 has ArduPilot concepts such as `vehicleinfo.json`,
+`sim_vehicle.py` frames, MAVProxy defaults, or ArduPilot Lua scripts.
+
+Detailed research and source notes live in `docs/PX4_SIH.md`.
 
 
 ## Build Decisions
@@ -168,6 +219,11 @@ stable shape for tooling, and generate the low-level runtime interface: env
 vars, `sim_vehicle.py` args, mounts, ports, Compose services, and any temporary
 generated files.
 
+For PX4 SIH, the same manifest layer should generate PX4-native env vars such
+as `PX4_SIM_MODEL`, `PX4_PARAM_*`, `PX4_HOME_*`, `PX4_RUN_DIR`, UDP port
+expectations, and MAVLink upload steps. Shared manifests should standardize the
+scenario shape without forcing PX4 to emulate ArduPilot's runtime files.
+
 The schema should allow both file-backed and inline definitions for mission,
 fence, and rally artifacts, but enforce exactly one form per artifact. For
 example, `mission.file` and `mission.items` must be mutually exclusive. The
@@ -280,8 +336,10 @@ path to all frames, params, and model assets when they need them.
   detailed research notes.
 - `docs/INITIAL_STATE.md`: research and recommendations for airborne or custom
   SITL initial state.
+- `docs/PX4_SIH.md`: PX4 SIH runtime research and design notes.
 - `docs/FUTURE_WORK.md`: actionable improvements and backlog.
-- `SESSION_SUMMARY.md`: chronological dev log for this session.
+- `docs/CHANGELOG.md`: release-facing project history.
+- `docs/SESSION_SUMMARY.md`: chronological dev log for this session.
 
 Future work belongs in `docs/FUTURE_WORK.md`. The README should link there
 rather than growing a long backlog section.

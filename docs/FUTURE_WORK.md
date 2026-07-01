@@ -45,6 +45,10 @@ This file tracks likely improvements. Keep design rationale in
 - Add a fleet/scenario manifest format that can generate Compose services. Env
   vars should remain the low-level interface for one-off SITLs, while fleet
   config manages repeated per-vehicle settings and artifact paths.
+- Extend the fleet/scenario manifest generator to target both ArduPilot SITL
+  and PX4 SIH. The generator should emit native env vars and launch surfaces
+  for each runtime rather than forcing a single autopilot's terminology across
+  both.
 - Add a first-class artifact output convention for generated Compose services,
   including per-vehicle `.BIN` log directories, MAVProxy `.tlog` directories
   when MAVProxy is enabled, stdout/stderr capture, and metadata that records the
@@ -69,6 +73,25 @@ This file tracks likely improvements. Keep design rationale in
   the expected TCP port opens.
 - Consider publishing prebuilt images in addition to zstd Docker archives.
 - Document or automate multi-version batch builds.
+
+
+## PX4 SIH
+
+- Validate `Dockerfile.px4-sih` against pinned PX4 release tags, starting with
+  the current stable PX4 release.
+- Track when PX4 release tags adopt `px4_sitl_sih` so the script can infer the
+  narrower target for more than `main`/`master`.
+- Tighten `PX4_SUBMODULE_PATHS` after real build results identify the minimum
+  submodule set required for `px4_sitl_sih`.
+- Consider factoring shared image output/cache/archive helpers out of the
+  ArduPilot and PX4 build scripts if their behavior continues to converge.
+- Validate bridge-networked Docker operation for PX4 SIH and document the
+  required PX4 network env vars or parameters. Host networking remains the v1
+  recommendation.
+- Add PX4-native examples for `PX4_PARAM_*` physics overrides, including SIH
+  wind and mass/inertia-related params.
+- Add MAVLink mission, fence, and rally upload support for PX4 through the
+  future shared artifact uploader instead of ArduPilot Lua.
 
 
 ## Runtime And Networking

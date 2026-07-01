@@ -95,8 +95,10 @@ Default section order:
 
 ## Project Contracts
 
-- This repository builds and documents Docker images for pre-built ArduPilot
-  SITL. Keep runtime images focused on running SITL, not rebuilding ArduPilot.
+- This repository builds and documents Docker images for pre-built SITL
+  runtimes. ArduPilot SITL is the mature primary path; PX4 SIH is a sibling
+  runtime path. Keep runtime images focused on running SITL, not rebuilding the
+  autopilot after startup.
 - Treat `./ardupilot` as an external checkout. Do not edit it unless the user
   explicitly asks for upstream ArduPilot changes. It contains its own
   `AGENTS.md`.
@@ -106,7 +108,8 @@ Default section order:
   `scripts/populate-config-bundles.py` for full generated catalogs.
 - Keep the README user-facing. Put design rationale in `docs/DESIGN.md`,
   research indexes in `docs/RESEARCH.md`, future work in
-  `docs/FUTURE_WORK.md`, and session history in `SESSION_SUMMARY.md`.
+  `docs/FUTURE_WORK.md`, release-facing history in `docs/CHANGELOG.md`, and
+  session history in `docs/SESSION_SUMMARY.md`.
 
 
 ## Verification
@@ -114,7 +117,8 @@ Default section order:
 Use the narrowest relevant checks:
 
 - Dockerfile edits: `docker buildx build --check -f Dockerfile .`
-- Release script edits: `bash -n scripts/build-release-image.sh`
+- Release script edits:
+  `bash -n scripts/build-release-image.sh scripts/build-px4-sih-image.sh`
 - Python helper edits:
   `python3 -m py_compile scripts/populate-config-bundles.py docker/resolve-sitl-config.py`
 - Config bundle edits:
@@ -149,5 +153,5 @@ sandboxed environments.
 - `docs/AGENTS.md`: design, research, backlog, and durable documentation rules.
 - `scripts/AGENTS.md`: build/export and config generation scripts.
 
-Root-owned files include `Dockerfile`, `README.md`, `SESSION_SUMMARY.md`,
+Root-owned files include `Dockerfile`, `Dockerfile.px4-sih`, `README.md`,
 `compose.sitl.yml`, `env.list`, `.dockerignore`, and `.gitignore`.

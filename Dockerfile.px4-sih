@@ -1,0 +1,143 @@
+# syntax=docker/dockerfile:1.4
+ARG PX4_BUILDER_IMAGE=px4io/px4-dev-base-jammy:latest
+ARG RUNTIME_BASE_IMAGE=ubuntu
+ARG RUNTIME_TAG=22.04
+
+FROM ${PX4_BUILDER_IMAGE} AS builder
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+ARG PX4_REPO=https://github.com/PX4/PX4-Autopilot.git
+ARG PX4_REF=main
+ARG PX4_CLONE_DEPTH=1
+ARG PX4_BUILD_TARGET=px4_sitl_sih
+ARG PX4_BUILD_DIR=px4_sitl_sih
+ARG PX4_SIM_MODEL=sihsim_quadx
+ARG PX4_JOBS=2
+ARG PX4_SUBMODULE_PATHS="src/modules/mavlink/mavlink src/drivers/gps/devices src/drivers/cyphal/libcanard src/drivers/cyphal/public_regulated_data_types src/drivers/cyphal/legacy_data_types src/lib/crypto/monocypher src/lib/events/libevents src/lib/crypto/libtomcrypt src/lib/crypto/libtommath src/modules/uxrce_dds_client/Micro-XRCE-DDS-Client src/lib/cdrstream/cyclonedds src/lib/cdrstream/rosidl src/modules/zenoh/zenoh-pico src/lib/heatshrink/heatshrink src/drivers/uavcan/libdronecan/dsdl src/drivers/uavcan/libdronecan/libuavcan/dsdl_compiler/pydronecan"
+
+WORKDIR /opt/px4
+
+RUN set -eux; \
+    depth_args=(); \
+    if [ -n "${PX4_CLONE_DEPTH}" ]; then \
+        depth_args=(--depth "${PX4_CLONE_DEPTH}"); \
+    fi; \
+    if git clone "${depth_args[@]}" --branch "${PX4_REF}" "${PX4_REPO}" PX4-Autopilot; then \
+        :; \
+    else \
+        git clone "${PX4_REPO}" PX4-Autopilot; \
+        cd PX4-Autopilot; \
+        git checkout "${PX4_REF}"; \
+    fi
+
+WORKDIR /opt/px4/PX4-Autopilot
+
+RUN set -eux; \
+    submodule_depth_args=(); \
+    if [ -n "${PX4_CLONE_DEPTH}" ]; then \
+        submodule_depth_args=(--depth "${PX4_CLONE_DEPTH}"); \
+    fi; \
+    if [ -n "${PX4_SUBMODULE_PATHS}" ]; then \
+        git submodule sync -- ${PX4_SUBMODULE_PATHS}; \
+        git submodule update --init --recursive "${submodule_depth_args[@]}" -- ${PX4_SUBMODULE_PATHS}; \
+    fi
+
+RUN --mount=type=cache,target=/root/.ccache,sharing=locked \
+    GIT_SUBMODULES_ARE_EVIL=1 make -j "${PX4_JOBS}" "${PX4_BUILD_TARGET}"
+
+RUN rm -rf \
+    /opt/px4/PX4-Autopilot/.git \
+    /opt/px4/PX4-Autopilot/.github \
+    /opt/px4/PX4-Autopilot/build/${PX4_BUILD_DIR}/build.ninja \
+    /opt/px4/PX4-Autopilot/build/${PX4_BUILD_DIR}/CMakeFiles \
+    /opt/px4/PX4-Autopilot/build/${PX4_BUILD_DIR}/compile_commands.json \
+    /opt/px4/PX4-Autopilot/build/${PX4_BUILD_DIR}/.ninja_deps \
+    /opt/px4/PX4-Autopilot/build/${PX4_BUILD_DIR}/.ninja_log
+
+
+FROM ${RUNTIME_BASE_IMAGE}:${RUNTIME_TAG} AS runtime
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG USER_NAME=px4
+ARG USER_UID=1000
+ARG USER_GID=1000
+ARG PX4_BUILD_TARGET=px4_sitl_sih
+ARG PX4_BUILD_DIR=px4_sitl_sih
+
+RUN set -eux; \
+    existing_group="$(getent group "${USER_GID}" | cut -d: -f1 || true)"; \
+    if [ -n "$existing_group" ]; then \
+        if [ "$existing_group" != "${USER_NAME}" ]; then \
+            groupmod -n "${USER_NAME}" "$existing_group"; \
+        fi; \
+    else \
+        groupadd "${USER_NAME}" --gid "${USER_GID}"; \
+    fi; \
+    existing_user="$(getent passwd "${USER_UID}" | cut -d: -f1 || true)"; \
+    if [ -n "$existing_user" ]; then \
+        if [ "$existing_user" != "${USER_NAME}" ]; then \
+            usermod -l "${USER_NAME}" -d "/home/${USER_NAME}" -m "$existing_user"; \
+        fi; \
+    else \
+        useradd -l -m "${USER_NAME}" -u "${USER_UID}" -g "${USER_GID}" -s /bin/bash; \
+    fi
+
+RUN rm -f /etc/apt/apt.conf.d/docker-clean \
+    && echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update && apt-get install --no-install-recommends -y \
+    bash \
+    bc \
+    ca-certificates \
+    libatomic1 \
+    libgcc-s1 \
+    libncurses6 \
+    libreadline8 \
+    libstdc++6 \
+    netbase \
+    procps \
+    python3
+
+RUN install -d -m 0755 /usr/local/bin /configs /artifacts \
+    && chown -R ${USER_NAME}:${USER_NAME} /home/${USER_NAME} /configs /artifacts
+
+COPY --from=builder --chown=${USER_NAME}:${USER_NAME} /opt/px4/PX4-Autopilot/build/${PX4_BUILD_DIR} /home/${USER_NAME}/PX4-Autopilot/build/${PX4_BUILD_DIR}
+COPY docker/px4-sih-entrypoint.sh /usr/local/bin/px4-sih-entrypoint.sh
+COPY docker/run-px4-sih.sh /usr/local/bin/run-px4-sih.sh
+
+RUN chmod +x /usr/local/bin/px4-sih-entrypoint.sh /usr/local/bin/run-px4-sih.sh \
+    && printf '%s\n' \
+        'export PATH="/usr/local/bin:$PATH"' \
+        > /home/${USER_NAME}/.bashrc \
+    && chown ${USER_NAME}:${USER_NAME} /home/${USER_NAME}/.bashrc
+
+USER ${USER_NAME}
+WORKDIR /home/${USER_NAME}
+
+# PX4 SITL is UDP-oriented. Ports are instance-aware in PX4; these are the
+# common single-instance defaults for GCS/offboard/DDS/SIH visualization.
+EXPOSE 14540/udp
+EXPOSE 14550/udp
+EXPOSE 18570/udp
+EXPOSE 19410/udp
+EXPOSE 8888/udp
+
+ENV PX4_BUILD_TARGET=${PX4_BUILD_TARGET}
+ENV PX4_BUILD_DIR=${PX4_BUILD_DIR}
+ENV PX4_ROOT=/home/${USER_NAME}/PX4-Autopilot
+ENV PX4_SIM_MODEL=sihsim_quadx
+ENV MODEL=
+ENV INSTANCE=0
+ENV SYSID=
+ENV LAT=37.1971467
+ENV LON=-80.5780381
+ENV ALT=618
+ENV DIR=
+ENV SPEEDUP=1
+ENV PX4_RUN_DIR=
+ENV ARTIFACTS_DIR=
+
+ENTRYPOINT ["/usr/local/bin/px4-sih-entrypoint.sh"]
