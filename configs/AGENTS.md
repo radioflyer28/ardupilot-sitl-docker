@@ -27,6 +27,8 @@ catalogs.
 - Runtime examples and bundles may use `scripts/` for Lua, `missions/` for QGC
   WPL 110 mission files, `fences/` for geofence JSON, and `rally/` for rally
   point JSON.
+- Mission examples use MAVLink preload and must not require Lua enablement.
+  Initial-state Lua examples still require their scripting/AHRS parameters.
 - Do not check in full generated catalogs unless the user explicitly asks.
 
 

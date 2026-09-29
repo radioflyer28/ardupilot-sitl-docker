@@ -28,7 +28,7 @@ Checked-in runtime examples:
 
 ```text
 examples/initial-state  Lua initial-state script plus params that enable it
-examples/mission        QGC WPL 110 mission plus params that enable loading it
+examples/mission        QGC WPL 110 mission uploaded before readiness
 examples/plan-artifacts Fence and rally JSON plans plus helper params
 ```
 
@@ -45,13 +45,12 @@ docker run -it --rm \
   ardupilot-sitl:copter-4.6.3
 ```
 
-Mission:
+Mission (MAVLink upload; Lua and `SCR_ENABLE` are not required):
 
 ```bash
 docker run -it --rm \
   --env-file env.list \
   -v "$PWD/configs/examples/mission:/configs:ro" \
-  -e PARAM_FILE=mission.parm \
   -e MISSION_FILE=missions/simple-copter.waypoints \
   ardupilot-sitl:copter-4.6.3
 ```

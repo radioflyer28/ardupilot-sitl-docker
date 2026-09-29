@@ -13,7 +13,8 @@ V1 is implemented as a sibling image path:
   SIH images with the same output modes and zstd compression behavior as the
   ArduPilot release script.
 - `docker/px4-sih-entrypoint.sh` mirrors the ArduPilot entrypoint pattern.
-- `docker/run-px4-sih.sh` starts the prebuilt PX4 binary directly.
+- `docker/run-px4-sih.sh` starts the prebuilt PX4 binary through the shared
+  `run_state.py` process/state wrapper, without invoking make.
 
 The PX4 path is intentionally smaller than the ArduPilot path. It does not
 attempt to support shared scenario manifests yet, and it does not reuse
@@ -133,8 +134,19 @@ ARTIFACTS_DIR/instance_<INSTANCE>
 /tmp/px4-sih/instance_<INSTANCE>
 ```
 
-Mount `ARTIFACTS_DIR` when retaining PX4 logs or parameters after a container
-exits.
+These settings choose an owned run root; PX4 executes in its `work/`
+subdirectory. The root must be empty or previously initialized by the runner.
+Unmarked nonempty roots are rejected without deleting files.
+
+`SITL_STATE=fresh` (default) archives existing work under `history/<id>/` and
+starts clean. `resume` retains PX4 state. Mount `ARTIFACTS_DIR` when retaining logs
+or parameters after a container exits. Ensure bind mounts are writable by the
+image user; archive pruning remains an operator responsibility.
+
+The wrapper monitors the binary, forwards shutdown to its process group, and
+uses `SITL_STOP_TIMEOUT` (default 10 seconds) before killing survivors. Its status
+is `running`, not MAVLink-ready. PX4 heartbeat/plan readiness remains unimplemented;
+do not use ArduPilot's readiness guarantee for this path.
 
 
 ## Networking
@@ -163,8 +175,8 @@ but the wrapper should not hide meaningful autopilot differences:
 - ArduPilot uses `sim_vehicle.py`; PX4 SIH starts the `px4` binary directly.
 - ArduPilot has `VEHICLE`, `FRAME`, `MODEL`, and `PARAM_FILE`; PX4 SIH uses
   `PX4_SIM_MODEL` and `PX4_PARAM_*`.
-- ArduPilot mission loading can use Lua in this image; PX4 mission/fence/rally
-  loading should use MAVLink upload tooling in a future shared layer.
+- ArduPilot mission/fence/rally initialization now shares a MAVLink uploader.
+  PX4 needs its own transport/readiness integration before adopting that path.
 - ArduPilot custom physics config can use model JSON and `vehicleinfo.json`;
   PX4 SIH physics is primarily parameterized through PX4 params and airframes.
 

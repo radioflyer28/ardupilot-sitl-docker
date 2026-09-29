@@ -16,6 +16,10 @@ Owns durable project documentation beyond quick user commands.
   and multi-SITL artifact organization.
 - `PX4_SIH.md`: research and runtime design notes for the PX4 SIH sibling
   image.
+- `EXTERNAL_SIMULATORS.md`: external physics and flight-dynamics simulator
+  options for ArduPilot and PX4.
+- `RUNTIME_PROFILES.md`: four-profile terminology, proposed external-dynamics
+  architecture, capability contracts, research evidence and qualification plan.
 - Runtime analysis log research currently lives in `RESEARCH.md` and
   `DESIGN.md` unless it grows into a dedicated note.
 - `FUTURE_WORK.md`: action-oriented backlog and improvement ideas.
@@ -48,6 +52,12 @@ Owns durable project documentation beyond quick user commands.
   multi-SITL artifact design decisions change.
 - Update `PX4_SIH.md` when PX4 SIH build, runtime, networking, or env
   conventions change.
+- Update `EXTERNAL_SIMULATORS.md` when external backend options, support
+  status, or integration boundaries change.
+- Update `RUNTIME_PROFILES.md` when runtime-profile boundaries, external backend
+  design assumptions or qualification findings change. Distinguish proposals,
+  upstream findings and locally verified capabilities; profiles are not a fixed
+  image/container count.
 - Update `RESEARCH.md` and `DESIGN.md` when `.BIN`, `.tlog`, or other
   post-run analysis artifact decisions change.
 - Update `FUTURE_WORK.md` when a future improvement is added, removed, or

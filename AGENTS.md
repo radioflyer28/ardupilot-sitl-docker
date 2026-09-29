@@ -103,7 +103,12 @@ Default section order:
   explicitly asks for upstream ArduPilot changes. It contains its own
   `AGENTS.md`.
 - Keep generated or heavy artifacts out of git by default, including
-  `.buildx-cache/`, `dist/images/`, and `configs/generated-frames/`.
+  `.buildx-cache/`, `dist/images/`, `configs/generated-frames/`, and local
+  `artifacts/` run directories.
+- Managed autopilot runtimes own one vehicle and one writable run root. Keep read-only
+  inputs separate from `work/` and archived `history/`; never clear an unowned
+  nonempty directory. Shared fresh/resume semantics must not imply identical
+  ArduPilot and PX4 readiness capabilities.
 - Keep checked-in config bundles small and example-oriented. Use
   `scripts/populate-config-bundles.py` for full generated catalogs.
 - Keep the README user-facing. Put design rationale in `docs/DESIGN.md`,
@@ -120,7 +125,10 @@ Use the narrowest relevant checks:
 - Release script edits:
   `bash -n scripts/build-release-image.sh scripts/build-px4-sih-image.sh`
 - Python helper edits:
-  `python3 -m py_compile scripts/populate-config-bundles.py docker/resolve-sitl-config.py`
+  `python3 -m py_compile scripts/populate-config-bundles.py docker/*.py`
+- Runtime configuration/lifecycle/protocol edits:
+  `python3 -m unittest discover -s docker -p 'test_*.py'` and
+  `bash -n docker/*.sh`
 - Config bundle edits:
   `python3 -m json.tool configs/frames/arducopter-quad/vehicleinfo.json` and
   `python3 -m json.tool configs/frames/arduplane-plane/vehicleinfo.json`
@@ -149,7 +157,8 @@ sandboxed environments.
 ## Child DOX Index
 
 - `configs/AGENTS.md`: runtime SITL config bundles and generated catalog rules.
-- `docker/AGENTS.md`: runtime config resolver and Docker helper code.
+- `docker/AGENTS.md`: runtime configuration, lifecycle/state, artifact upload
+  helpers and host-only regression tests.
 - `docs/AGENTS.md`: design, research, backlog, and durable documentation rules.
 - `scripts/AGENTS.md`: build/export and config generation scripts.
 

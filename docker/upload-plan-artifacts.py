@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Upload runtime fence and rally artifacts through MAVLink mission protocol."""
+"""Validate and upload mission, fence and rally artifacts through MAVLink."""
 
 from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
 import json
+import math
 import os
+import socket
 from pathlib import Path
 import sys
 import time
@@ -27,6 +29,8 @@ class PlanItem:
     lat: float
     lon: float
     alt: float
+    current: int = 0
+    autocontinue: int = 1
 
 
 FENCE_TYPE_COMMANDS = {
@@ -66,7 +70,10 @@ def resolve_path(path: str, config_dir: Path) -> Path:
 def load_json(path: Path) -> Any:
     try:
         with path.open(encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+        if isinstance(data, dict) and data.get("version", 1) != 1:
+            raise PlanError(f"{path}: unsupported version (expected 1)")
+        return data
     except OSError as exc:
         raise PlanError(f"{path}: could not read file: {exc}") from exc
     except json.JSONDecodeError as exc:
@@ -87,9 +94,12 @@ def require_sequence(value: Any, context: str) -> list[Any]:
 
 def number(value: Any, context: str) -> float:
     try:
-        return float(value)
+        result = float(value)
     except (TypeError, ValueError) as exc:
         raise PlanError(f"{context}: expected a number") from exc
+    if isinstance(value, bool) or not math.isfinite(result):
+        raise PlanError(f"{context}: expected a finite number")
+    return result
 
 
 def required_number(obj: dict[str, Any], key: str, context: str) -> float:
@@ -143,6 +153,8 @@ def raw_params(item: dict[str, Any], context: str) -> tuple[float, float, float,
 
 def raw_command(value: Any, context: str) -> str | int:
     if isinstance(value, int):
+        if isinstance(value, bool) or not 0 <= value <= 65535:
+            raise PlanError(f"{context}: command must be an unsigned 16-bit integer")
         return value
     if not isinstance(value, str) or not value.strip():
         raise PlanError(f"{context}: expected a command string or integer")
@@ -251,6 +263,9 @@ def parse_fence_file(path: Path) -> list[PlanItem]:
             radius = 0.0
             altitude = optional_number(fence, "alt", 0.0, context)
 
+        if fence_type.endswith("inclusion") or fence_type.endswith("exclusion"):
+            if radius <= 0:
+                raise PlanError(f"{context}.radius: must be positive")
         items.append(
             PlanItem(
                 seq=len(items),
@@ -298,6 +313,52 @@ def parse_rally_file(path: Path) -> list[PlanItem]:
     return items
 
 
+def parse_mission_file(path: Path) -> list[PlanItem]:
+    """Parse the complete WPL file before any vehicle state is touched."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if not lines or lines[0].strip() != "QGC WPL 110":
+        raise PlanError(f"{path}: expected QGC WPL 110 header")
+    items = []
+    for line_number, line in enumerate(lines[1:], 2):
+        if not line.strip():
+            continue
+        fields = line.split()
+        context = f"{path}:{line_number}"
+        if len(fields) != 12:
+            raise PlanError(f"{context}: expected 12 fields")
+        values = [number(v, context) for v in fields]
+        for index in (0, 1, 2, 3, 11):
+            if values[index] != int(values[index]):
+                raise PlanError(f"{context}: field {index + 1} must be an integer")
+        seq, current, frame, command = map(int, values[:4])
+        if seq != len(items) or current not in (0, 1) or values[11] not in (0, 1):
+            raise PlanError(f"{context}: invalid sequence/current/autocontinue")
+        if not 0 <= command <= 65535:
+            raise PlanError(f"{context}: command out of range")
+        items.append(PlanItem(seq, "MAV_MISSION_TYPE_MISSION", frame, command,
+                              tuple(values[4:8]), *values[8:11], current, int(values[11])))
+    return items
+
+
+GLOBAL_FRAMES = {0, 3, 5, 6, 10, 11, "MAV_FRAME_GLOBAL", "MAV_FRAME_GLOBAL_INT",
+                 "MAV_FRAME_GLOBAL_RELATIVE_ALT", "MAV_FRAME_GLOBAL_RELATIVE_ALT_INT",
+                 "MAV_FRAME_GLOBAL_TERRAIN_ALT", "MAV_FRAME_GLOBAL_TERRAIN_ALT_INT"}
+
+
+def validate_items(items, path):
+    for item in items:
+        if item.frame in GLOBAL_FRAMES:
+            if not -90 <= item.lat <= 90 or not -180 <= item.lon <= 180:
+                raise PlanError(f"{path}: item {item.seq}: latitude/longitude out of range")
+        elif item.frame in (2, "MAV_FRAME_MISSION") and item.mission_type == "MAV_MISSION_TYPE_MISSION":
+            if any(v != int(v) or not -(2**31) <= v < 2**31 for v in (item.lat, item.lon)):
+                raise PlanError(f"{path}: item {item.seq}: mission-frame x/y must be int32")
+        else:
+            raise PlanError(f"{path}: item {item.seq}: unsupported frame {item.frame}")
+    if len(items) > 65535:
+        raise PlanError(f"{path}: too many items")
+
+
 def mav_value(mavlink: Any, value: str | int, context: str) -> int:
     if isinstance(value, int):
         return value
@@ -307,120 +368,110 @@ def mav_value(mavlink: Any, value: str | int, context: str) -> int:
         raise PlanError(f"{context}: unknown MAVLink constant {value}") from exc
 
 
-def encode_item(master: Any, item: PlanItem, target_system: int, target_component: int) -> Any:
-    mavlink = master.mav
+def encode_item(master: Any, item: PlanItem, target_system: int, target_component: int, legacy=False) -> Any:
     constants = load_mavutil().mavlink
-    return mavlink.mission_item_int_encode(
-        target_system,
-        target_component,
-        item.seq,
-        mav_value(constants, item.frame, f"item {item.seq} frame"),
-        mav_value(constants, item.command, f"item {item.seq} command"),
-        0,
-        0,
-        item.params[0],
-        item.params[1],
-        item.params[2],
-        item.params[3],
-        int(round(item.lat * 1e7)),
-        int(round(item.lon * 1e7)),
-        item.alt,
-        mav_value(constants, item.mission_type, f"item {item.seq} mission_type"),
-    )
+    frame = mav_value(constants, item.frame, f"item {item.seq} frame")
+    global_frame = item.frame in GLOBAL_FRAMES
+    if legacy:
+        frame = {5: 0, 6: 3, 11: 10}.get(frame, frame)
+        encode = master.mav.mission_item_encode
+        x, y = item.lat, item.lon
+    else:
+        frame = {0: 5, 3: 6, 10: 11}.get(frame, frame)
+        encode = master.mav.mission_item_int_encode
+        scale = 1e7 if global_frame else 1
+        x, y = int(round(item.lat * scale)), int(round(item.lon * scale))
+    return encode(target_system, target_component, item.seq, frame,
+                  mav_value(constants, item.command, f"item {item.seq} command"),
+                  item.current, item.autocontinue, *item.params, x, y, item.alt,
+                  mav_value(constants, item.mission_type, f"item {item.seq} mission_type"))
 
 
-def connect(master_spec: str, timeout: float) -> tuple[Any, Any]:
+def connect(master_spec: str, timeout: float, target_system=1, target_component=1) -> tuple[Any, Any]:
     mavutil = load_mavutil()
     deadline = time.monotonic() + timeout
-    last_error: Exception | None = None
-
+    last_error = None
     while time.monotonic() < deadline:
         connection = None
+        keep = False
+        previous_timeout = socket.getdefaulttimeout()
         try:
-            connection = mavutil.mavlink_connection(
-                master_spec,
-                source_system=255,
-                source_component=0,
-                dialect="ardupilotmega",
-            )
-            heartbeat = connection.wait_heartbeat(timeout=1)
-            if heartbeat is not None:
-                return connection, heartbeat
-        except Exception as exc:  # pymavlink raises several connection types
+            socket.setdefaulttimeout(min(1.0, max(0.01, deadline - time.monotonic())))
+            connection = mavutil.mavlink_connection(master_spec, source_system=255,
+                                                   source_component=190, dialect="ardupilotmega", retries=1)
+            while time.monotonic() < deadline:
+                heartbeat = connection.wait_heartbeat(timeout=min(1.0, max(0.01, deadline - time.monotonic())))
+                if heartbeat is None:
+                    # Keep a healthy TCP connection open while the vehicle boots.
+                    continue
+                if (heartbeat.get_srcSystem() == target_system and heartbeat.get_srcComponent() == target_component
+                        and heartbeat.autopilot != mavutil.mavlink.MAV_AUTOPILOT_INVALID):
+                    keep = True
+                    return connection, heartbeat
+        except (OSError, ValueError) as exc:
             last_error = exc
-            if connection is not None:
+            time.sleep(min(0.2, max(0, deadline - time.monotonic())))
+        finally:
+            socket.setdefaulttimeout(previous_timeout)
+            if connection is not None and not keep:
                 connection.close()
-            time.sleep(0.5)
-
     detail = f": {last_error}" if last_error else ""
-    raise PlanError(f"timed out waiting for MAVLink heartbeat on {master_spec}{detail}")
+    raise PlanError(f"timed out waiting for autopilot {target_system}/{target_component} on {master_spec}{detail}")
 
 
 def upload_items(master: Any, heartbeat: Any, label: str, items: list[PlanItem], timeout: float) -> None:
-    mavutil = load_mavutil()
-    mavlink = mavutil.mavlink
-    if not items:
-        print(f"upload-plan-artifacts.py: {label}: no items to upload")
-        return
-
-    target_system = heartbeat.get_srcSystem()
-    target_component = heartbeat.get_srcComponent()
-    mission_type = mav_value(mavlink, items[0].mission_type, f"{label} mission_type")
+    mavlink = load_mavutil().mavlink
+    target_system, target_component = heartbeat.get_srcSystem(), heartbeat.get_srcComponent()
+    mission_type = mav_value(mavlink, "MAV_MISSION_TYPE_" + label.upper(), f"{label} mission_type")
     encoded = [encode_item(master, item, target_system, target_component) for item in items]
-
-    print(f"upload-plan-artifacts.py: uploading {len(items)} {label} item(s)")
-    master.mav.mission_count_send(target_system, target_component, len(encoded), mission_type)
-
-    remaining = set(range(len(encoded)))
+    remaining = set(range(len(items)))
     deadline = time.monotonic() + timeout
-    while remaining:
-        if time.monotonic() > deadline:
-            pending = ", ".join(str(seq) for seq in sorted(remaining))
-            raise PlanError(f"{label}: timed out waiting for item request(s): {pending}")
-
-        msg = master.recv_match(type=["MISSION_REQUEST", "MISSION_REQUEST_INT", "MISSION_ACK"], blocking=True, timeout=1)
+    retry_at = 0.0
+    last_item = None
+    print(f"upload-plan-artifacts.py: uploading {len(items)} {label} item(s)", flush=True)
+    while time.monotonic() < deadline:
+        if time.monotonic() >= retry_at:
+            if last_item is None:
+                master.mav.mission_count_send(target_system, target_component, len(items), mission_type)
+            else:
+                master.mav.send(last_item)
+            retry_at = time.monotonic() + 1.0
+        msg = master.recv_match(type=["MISSION_REQUEST", "MISSION_REQUEST_INT", "MISSION_ACK"],
+                                blocking=True, timeout=min(0.5, max(0.01, deadline - time.monotonic())))
         if msg is None:
             continue
-
-        msg_type = msg.get_type()
-        msg_mission_type = getattr(msg, "mission_type", mission_type)
-        if msg_mission_type != mission_type:
+        if (msg.get_srcSystem() != target_system or msg.get_srcComponent() != target_component
+                or getattr(msg, "mission_type", 0) != mission_type
+                or getattr(msg, "target_system", 0) not in (0, master.source_system)
+                or getattr(msg, "target_component", 0) not in (0, master.source_component)):
             continue
-
-        if msg_type == "MISSION_ACK":
-            result = mavutil.mavlink.enums["MAV_MISSION_RESULT"].get(msg.type)
-            result_name = result.name if result else str(msg.type)
-            raise PlanError(f"{label}: received early MISSION_ACK {result_name}")
-
-        seq = msg.seq
-        if seq not in remaining:
-            continue
-        master.mav.send(encoded[seq])
-        remaining.remove(seq)
-        deadline = time.monotonic() + max(10.0, timeout / 4.0)
-
-    ack_deadline = time.monotonic() + max(10.0, timeout / 4.0)
-    while time.monotonic() < ack_deadline:
-        msg = master.recv_match(type=["MISSION_ACK"], blocking=True, timeout=1)
-        if msg is None:
-            continue
-        if getattr(msg, "mission_type", mission_type) != mission_type:
-            continue
-        if msg.type != mavlink.MAV_MISSION_ACCEPTED:
-            result = mavlink.enums["MAV_MISSION_RESULT"].get(msg.type)
-            result_name = result.name if result else str(msg.type)
-            raise PlanError(f"{label}: upload failed: {result_name}")
-        print(f"upload-plan-artifacts.py: uploaded {len(items)} {label} item(s)")
-        return
-
-    raise PlanError(f"{label}: timed out waiting for MISSION_ACK")
+        if msg.get_type() == "MISSION_ACK":
+            if msg.type != mavlink.MAV_MISSION_ACCEPTED:
+                raise PlanError(f"{label}: upload rejected, MAV_MISSION_RESULT={msg.type}")
+            if remaining:
+                raise PlanError(f"{label}: accepted before all items were requested")
+            print(f"upload-plan-artifacts.py: uploaded {len(items)} {label} item(s)", flush=True)
+            return
+        if not 0 <= msg.seq < len(items):
+            raise PlanError(f"{label}: invalid requested sequence {msg.seq}")
+        # Repeated requests are normal loss recovery, including after the last item.
+        last_item = (encode_item(master, items[msg.seq], target_system, target_component, legacy=True)
+                     if msg.get_type() == "MISSION_REQUEST" else encoded[msg.seq])
+        master.mav.send(last_item)
+        remaining.discard(msg.seq)
+        retry_at = time.monotonic() + 1.0
+    raise PlanError(f"{label}: upload timed out before accepted MISSION_ACK")
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config-dir", default=os.environ.get("SITL_CONFIG_DIR") or "/configs")
     parser.add_argument("--master", default=os.environ.get("PLAN_UPLOAD_MASTER"))
-    parser.add_argument("--timeout", type=float, default=float(os.environ.get("PLAN_UPLOAD_TIMEOUT") or 60))
+    parser.add_argument("--timeout", type=float, default=os.environ.get("PLAN_UPLOAD_TIMEOUT") or "60")
+    parser.add_argument("--mission", default=os.environ.get("MISSION_FILE"))
+    parser.add_argument("--target-system", type=int, default=os.environ.get("SYSID") or "1")
+    parser.add_argument("--target-component", type=int, default=1)
+    parser.add_argument("--wait-ready", action="store_true", help="verify target heartbeat even with no artifacts")
     parser.add_argument("--fence", default=os.environ.get("FENCE_FILE"))
     parser.add_argument("--rally", default=os.environ.get("RALLY_FILE"))
     parser.add_argument("--dry-run", action="store_true", help="parse selected files without connecting to MAVLink")
@@ -430,6 +481,11 @@ def parse_args() -> argparse.Namespace:
 def selected_plans(args: argparse.Namespace) -> list[tuple[str, Path, list[PlanItem]]]:
     config_dir = Path(args.config_dir)
     plans = []
+    if args.mission:
+        mission_path = resolve_path(args.mission, config_dir)
+        if not mission_path.is_file():
+            raise PlanError(f"MISSION_FILE does not exist or is not a file: {mission_path}")
+        plans.append(("mission", mission_path, parse_mission_file(mission_path)))
     if args.fence:
         fence_path = resolve_path(args.fence, config_dir)
         if not fence_path.is_file():
@@ -440,6 +496,8 @@ def selected_plans(args: argparse.Namespace) -> list[tuple[str, Path, list[PlanI
         if not rally_path.is_file():
             raise PlanError(f"RALLY_FILE does not exist or is not a file: {rally_path}")
         plans.append(("rally", rally_path, parse_rally_file(rally_path)))
+    for _label, path, items in plans:
+        validate_items(items, path)
     return plans
 
 
@@ -447,8 +505,12 @@ def main() -> int:
     args = parse_args()
     try:
         plans = selected_plans(args)
-        if not plans:
+        if not plans and not args.wait_ready:
             return 0
+        if not math.isfinite(args.timeout) or args.timeout <= 0:
+            raise PlanError("timeout must be finite and positive")
+        if not 1 <= args.target_system <= 255 or not 1 <= args.target_component <= 255:
+            raise PlanError("target system and component must be between 1 and 255")
 
         if args.dry_run:
             for label, path, items in plans:
@@ -458,13 +520,14 @@ def main() -> int:
         if not args.master:
             raise PlanError("PLAN_UPLOAD_MASTER was not set and no --master was provided")
 
-        master, heartbeat = connect(args.master, args.timeout)
+        deadline = time.monotonic() + args.timeout
+        master, heartbeat = connect(args.master, args.timeout, args.target_system, args.target_component)
         try:
             for label, _path, items in plans:
-                upload_items(master, heartbeat, label, items, args.timeout)
+                upload_items(master, heartbeat, label, items, max(0, deadline - time.monotonic()))
         finally:
             master.close()
-    except PlanError as exc:
+    except (PlanError, OSError, ValueError, ImportError) as exc:
         print(f"upload-plan-artifacts.py: {exc}", file=sys.stderr)
         return 1
 

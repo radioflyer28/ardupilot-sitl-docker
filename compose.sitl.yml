@@ -1,33 +1,54 @@
+x-runtime: &runtime
+  image: ${ARDUPILOT_SITL_IMAGE:-ardupilot-sitl:copter-4.6.3}
+  env_file:
+    - env.list
+  init: true
+  stop_grace_period: 20s
+  healthcheck:
+    test: ["CMD", "/usr/local/bin/run-sitl.sh", "--healthcheck"]
+    interval: 5s
+    timeout: 3s
+    start_period: 65s
+    retries: 3
+
 services:
   sitl-0:
-    image: ${ARDUPILOT_SITL_IMAGE:-ardupilot-sitl:copter-4.6.3}
-    env_file:
-      - env.list
+    <<: *runtime
     environment:
       INSTANCE: 0
       SYSID: 1
       NO_MAVPROXY: 1
+      SITL_RUN_DIR: /home/ardupilot/runs
     ports:
-      - "5760:5760/tcp"
+      - "127.0.0.1:5760:5760/tcp"
+    volumes:
+      - sitl-0-runs:/home/ardupilot/runs
 
   sitl-1:
-    image: ${ARDUPILOT_SITL_IMAGE:-ardupilot-sitl:copter-4.6.3}
-    env_file:
-      - env.list
+    <<: *runtime
     environment:
       INSTANCE: 1
       SYSID: 2
       NO_MAVPROXY: 1
+      SITL_RUN_DIR: /home/ardupilot/runs
     ports:
-      - "5770:5770/tcp"
+      - "127.0.0.1:5770:5770/tcp"
+    volumes:
+      - sitl-1-runs:/home/ardupilot/runs
 
   sitl-2:
-    image: ${ARDUPILOT_SITL_IMAGE:-ardupilot-sitl:copter-4.6.3}
-    env_file:
-      - env.list
+    <<: *runtime
     environment:
       INSTANCE: 2
       SYSID: 3
       NO_MAVPROXY: 1
+      SITL_RUN_DIR: /home/ardupilot/runs
     ports:
-      - "5780:5780/tcp"
+      - "127.0.0.1:5780:5780/tcp"
+    volumes:
+      - sitl-2-runs:/home/ardupilot/runs
+
+volumes:
+  sitl-0-runs:
+  sitl-1-runs:
+  sitl-2-runs:

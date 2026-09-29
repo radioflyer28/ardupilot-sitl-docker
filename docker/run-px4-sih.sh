@@ -6,6 +6,18 @@ build_dir="${PX4_BUILD_DIR:-${build_target}}"
 px4_root="${PX4_ROOT:-${HOME}/PX4-Autopilot}"
 build_path="${px4_root}/build/${build_dir}"
 instance="${INSTANCE:-0}"
+if ! [[ "$instance" =~ ^[0-9]+$ ]] || [ "$instance" -gt 254 ]; then
+    printf 'run-px4-sih.sh: INSTANCE must be between 0 and 254\n' >&2
+    exit 1
+fi
+# The wrapper owns instance and working-directory selection.
+for arg in "$@"; do
+    case "$arg" in
+        -i*|-w*|-d*)
+            printf 'run-px4-sih.sh: use env configuration instead of %s\n' "$arg" >&2
+            exit 1 ;;
+    esac
+done
 model="${MODEL:-${PX4_SIM_MODEL:-sihsim_quadx}}"
 
 if [ ! -x "${build_path}/bin/px4" ]; then
@@ -36,7 +48,7 @@ else
     run_dir="/tmp/px4-sih/instance_${instance}"
 fi
 
-mkdir -p "${run_dir}"
-cd "${run_dir}"
-
-exec "${build_path}/bin/px4" -i "${instance}" -d "${build_path}/etc" "$@"
+exec python3 "$(dirname "$(readlink -f "$0")")/run_state.py" \
+    --root "${run_dir}" --state "${SITL_STATE:-fresh}" \
+    --stop-timeout "${SITL_STOP_TIMEOUT:-10}" -- \
+    "${build_path}/bin/px4" -i "${instance}" -d "${build_path}/etc" "$@"

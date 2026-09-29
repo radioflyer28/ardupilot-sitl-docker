@@ -1,331 +1,124 @@
 # Runtime Plan Artifacts
 
-This note captures how missions, geofences, rally points, initial state, and
-other scenario artifacts should fit into runtime SITL config bundles,
-especially when running many SITL containers at once.
+## Current contract
 
+Each container owns one vehicle and one read-only input bundle. The managed
+runner parses every selected artifact before launch, then uploads it after a
+heartbeat from the expected `SYSID` and autopilot component 1. Readiness requires
+accepted uploads for all selected plans.
 
-## Summary
+| Setting | Input | MAVLink plan type |
+| --- | --- | --- |
+| `MISSION_FILE` | QGC WPL 110 | `MAV_MISSION_TYPE_MISSION` |
+| `FENCE_FILE` | project-owned JSON | `MAV_MISSION_TYPE_FENCE` |
+| `RALLY_FILE` | project-owned JSON | `MAV_MISSION_TYPE_RALLY` |
 
-The project should treat each SITL container as owning one runtime config bundle.
-That bundle should contain every artifact needed for that vehicle:
+All relative paths resolve under `SITL_CONFIG_DIR`. Missing or malformed inputs
+fail preflight. `MISSION_FILE` no longer installs a Lua loader or requires
+`SCR_ENABLE`; Lua is reserved for user simulation behavior.
+
+Example service-local bundle:
 
 ```text
-configs/fleet/uav0/
+/configs/
   vehicleinfo.json
   model.json
   params.parm
-  scripts/
-    initial-state.lua
-  missions/
-    survey.waypoints
-  fences/
-    operating-area.json
-  rally/
-    recovery-points.json
+  scripts/initial-state.lua
+  missions/survey.waypoints
+  fences/operating-area.json
+  rally/recovery-points.json
 ```
 
-For Docker Compose, each service should mount its own bundle at `/configs`.
-Inside a container, fixed staging paths such as `missions/mission.waypoints` are
-safe because each container has an isolated ArduPilot working tree. Avoid
-designs that rely on shared global files, host-side mutable state, or one
-container managing another container's plan artifacts.
+Selected empty plans clear the corresponding plan type. Omitted plans do not
+send a clear; `SITL_STATE=resume` may therefore retain an existing plan. Fresh
+runs use a new work directory. Explicitly selected plans are re-uploaded even
+on resume. Loading does not arm the vehicle, change flight mode or start a
+mission.
 
+## Input formats
 
-## Current State
+WPL parsing checks the exact header, twelve fields per nonempty item row,
+contiguous sequence numbers, current/autocontinue flags and numeric values.
+Global, relative-altitude and terrain global frames are supported, along with
+`MAV_FRAME_MISSION` for non-location command fields. Unsupported local frames
+fail explicitly rather than being silently scaled as latitude/longitude.
 
-Implemented runtime artifacts:
+Fence JSON supports polygon inclusion/exclusion, circle inclusion/exclusion,
+home-circle inclusion and return points. Rally JSON supports location/altitude
+points. Both also accept raw `items` with command, frame and parameters.
+Version 1 is the supported object format (omitting version retains compatibility).
+Numbers must be finite, geographic coordinates in range, circle radii positive,
+and polygon vertex counts between 3 and 255.
 
-- `MODEL`: optional `sim_vehicle.py --model` override.
-- `PARAM_FILE`: optional `sim_vehicle.py --add-param-file` override.
-- `LUA_SCRIPT`: optional single Lua script copied into the working `scripts/`
-  directory.
-- `$SITL_CONFIG_DIR/scripts/`: optional bundle scripts copied into the working
-  `scripts/` directory.
-- `MISSION_FILE`: optional QGC WPL 110 mission staged into the working
-  `missions/` directory and loaded by the image-provided Lua script.
-- `FENCE_FILE`: optional project-owned JSON geofence plan uploaded with
-  `MAV_MISSION_TYPE_FENCE`.
-- `RALLY_FILE`: optional project-owned JSON rally plan uploaded with
-  `MAV_MISSION_TYPE_RALLY`.
-- `PLAN_UPLOAD_MASTER`: optional MAVLink endpoint override for fence/rally
-  uploads.
-- `PLAN_UPLOAD_TIMEOUT`: upload timeout, default 60 seconds.
-
-Implemented examples:
-
-- `configs/examples/initial-state/`
-- `configs/examples/mission/`
-- `configs/examples/plan-artifacts/`
-
-
-## Missions
-
-Plain mission loading can use the Lua path because ArduPilot exposes mission
-write APIs to scripting:
-
-- `mission:clear()`
-- `mission:set_item(index, item)`
-- `mavlink_mission_item_int_t()`
-
-This repo uses `MISSION_FILE` for QGC WPL 110 mission files. The wrapper
-resolves the selected file relative to `SITL_CONFIG_DIR`, stages it into the
-ArduPilot working tree, and installs `load-mission.lua`.
-
-This path is intentionally independent of MAVProxy, so it works with
-`NO_MAVPROXY=1`.
-
-
-## Geofence And Rally Findings
-
-MAVLink models mission, fence, and rally as separate mission-protocol plan
-types using `mission_type`:
-
-- `MAV_MISSION_TYPE_MISSION`
-- `MAV_MISSION_TYPE_FENCE`
-- `MAV_MISSION_TYPE_RALLY`
-
-ArduPilot supports those plan types through separate C++ mission item protocol
-handlers:
-
-- `MissionItemProtocol_Waypoints`
-- `MissionItemProtocol_Fence`
-- `MissionItemProtocol_Rally`
-
-The local ArduPilot checkout registers fence and rally handlers when the
-vehicle supports them. Fence uploads accept commands such as:
-
-- `MAV_CMD_NAV_FENCE_POLYGON_VERTEX_INCLUSION`
-- `MAV_CMD_NAV_FENCE_POLYGON_VERTEX_EXCLUSION`
-- `MAV_CMD_NAV_FENCE_RETURN_POINT`
-- `MAV_CMD_NAV_FENCE_CIRCLE_INCLUSION`
-- `MAV_CMD_NAV_FENCE_CIRCLE_EXCLUSION`
-- `MAV_CMD_NAV_FENCE_HOME_CIRCLE_INCLUSION`
-
-Rally uploads accept `MAV_CMD_NAV_RALLY_POINT`.
-
-Lua is not currently the right write path for fences and rally points. The
-local scripting bindings expose fence status/read helpers and rally lookup, but
-not APIs to replace stored fence or rally plans.
-
-`QGC WPL 110` should also not be stretched to represent all plan artifacts. It
-is useful for mission waypoints, but MAVLink documents it as not supporting
-geofence or rally point information.
-
-
-## Implemented Low-Level Knobs
-
-Keep direct env vars for one-off SITL runs. They are useful for quick
-experiments, CI smoke tests, and derived images that already know exactly which
-artifact to mount:
-
-```text
-MISSION_FILE=
-FENCE_FILE=
-RALLY_FILE=
-```
-
-These mirror the existing path semantics:
-
-- empty by default
-- absolute paths used as-is
-- relative paths resolved under `SITL_CONFIG_DIR`
-- fail fast when the selected file does not exist
-- stage or upload the artifact inside the container
-
-Unlike `MISSION_FILE`, fence and rally are uploaded with MAVLink mission
-protocol tooling after SITL is accepting MAVLink connections. The runtime image
-includes a small Python helper that uses the ArduPilot Python environment and
-pymavlink already present for SITL tooling.
-
-The helper:
-
-- connect to the container-local SITL MAVLink endpoint
-- upload one artifact at a time with the proper `mission_type`
-- use `MISSION_COUNT`, `MISSION_REQUEST_INT` / `MISSION_REQUEST`, and
-  `MISSION_ACK`
-- preserve mission, fence, and rally as independent plan types
-- report concise errors with the artifact path, item sequence, and ack result
-
-The implemented helper uses an explicit project-owned JSON format for fence and
-rally examples before trying to parse every ground-station export format. JSON
-keeps runtime dependencies low and makes generated Compose/fleet tooling
-simpler.
-
-When `NO_MAVPROXY=1`, the default upload endpoint is direct SITL TCP:
-`tcp:127.0.0.1:$((5760 + INSTANCE * 10))`. When MAVProxy is enabled and
-`PLAN_UPLOAD_MASTER` is unset, the wrapper adds a private in-container MAVProxy
-`tcpin` output at `$((5761 + INSTANCE * 10))` and uploads through that.
-Explicit `PLAN_UPLOAD_MASTER` values are used as-is.
-
-For multi-SITL runs, do not expect users to manage every artifact through long
-hand-written env blocks. Add a higher-level fleet/scenario layer that can expand
-per-vehicle definitions into Compose services, mounts, ports, and env vars.
-
-
-## Proposed Bundle Shape
-
-A complete per-vehicle bundle should remain flat enough to inspect, but grouped
-by artifact type:
-
-```text
-SITL_CONFIG_DIR/
-  vehicleinfo.json
-  params.parm
-  model.json
-  scripts/
-    initial-state.lua
-  missions/
-    mission.waypoints
-  fences/
-    fence.json
-  rally/
-    rally.json
-```
-
-Suggested future env use:
-
-```text
-PARAM_FILE=params.parm
-MISSION_FILE=missions/mission.waypoints
-LUA_SCRIPT=scripts/initial-state.lua
-FENCE_FILE=fences/fence.json
-RALLY_FILE=rally/rally.json
-```
-
-These env vars are the low-level runtime interface. A future fleet manager
-should generate them from a clearer per-vehicle config rather than asking users
-to hand-maintain large Compose env blocks.
-
-
-## Manifest Artifact Forms
-
-The future per-vehicle manifest should support both file references and inline
-definitions for mission, fence, and rally artifacts. It must enforce exactly
-one form per artifact so generation is deterministic:
-
-```json
-{
-  "mission": {
-    "file": "missions/survey.waypoints"
-  }
-}
-```
-
-or:
-
-```json
-{
-  "mission": {
-    "items": [
-      {
-        "command": "MAV_CMD_NAV_TAKEOFF",
-        "frame": "relative",
-        "alt": 20
-      },
-      {
-        "command": "MAV_CMD_NAV_WAYPOINT",
-        "frame": "relative",
-        "lat": 37.1973,
-        "lon": -80.5782,
-        "alt": 40
-      }
-    ]
-  }
-}
-```
-
-The schema should reject ambiguous artifacts such as a `mission` object with
-both `file` and `items`. Apply the same rule to:
-
-- `fence.file` versus inline `fence.fences` or raw `fence.items`
-- `rally.file` versus inline `rally.points` or raw `rally.items`
-
-File-backed artifacts should pass through as env vars such as `MISSION_FILE`,
-`FENCE_FILE`, and `RALLY_FILE`. Inline artifacts should be rendered to generated
-runtime files, then passed through the same env vars. This keeps the runtime
-interface small while allowing compact one-file scenarios.
-
-Params are intentionally different. A manifest can support both ordered param
-files and a final inline override map because that merge behavior is clear:
-
-```json
-{
-  "params": {
-    "files": ["base.parm", "controller.parm"],
-    "set": {
-      "SCR_ENABLE": 1,
-      "FENCE_ENABLE": 1
-    }
-  }
-}
-```
-
-Lua should stay file-backed for scripts. Structured Lua config can live in the
-manifest and be rendered into a generated config file or params consumed by a
-script, but the Lua source itself should remain a normal file.
-
-
-## One-Off Vs Fleet Configuration
-
-Use direct env vars for a single vehicle or a quick override:
+Examples are in `configs/examples/mission/` and
+`configs/examples/plan-artifacts/`. Dry-run parsing needs only standard Python:
 
 ```bash
-docker run ... \
-  -e PARAM_FILE=params.parm \
-  -e MISSION_FILE=missions/mission.waypoints \
-  -e LUA_SCRIPT=scripts/initial-state.lua
+python3 docker/upload-plan-artifacts.py --dry-run --config-dir configs/examples/mission \
+  --mission missions/simple-copter.waypoints
+python3 docker/upload-plan-artifacts.py --dry-run --config-dir configs/examples/plan-artifacts \
+  --fence fences/simple-polygon.json --rally rally/recovery-points.json
 ```
 
-Use a fleet/scenario definition for multiple vehicles. It should describe each
-vehicle once, then generate Compose services and env vars:
+Geometry validity, parameter compatibility and vehicle support are ultimately
+checked by the autopilot; a syntactically valid input can still receive a
+rejected upload ACK. Such rejection fails startup.
 
-```yaml
-vehicles:
-  - name: uav0
-    image: ardupilot-sitl:copter-4.6.3
-    bundle: ./configs/fleet/uav0
-    instance: 0
-    sysid: 1
-    vehicle: ArduCopter
-    frame: quad
-    location: { lat: 37.1971467, lon: -80.5780381, alt: 618, heading: 55 }
-    params: params.parm
-    mission: missions/survey.waypoints
-    initial_state: scripts/initial-state.lua
-    fence: fences/operating-area.json
-    rally: rally/recovery-points.json
-```
+## Transport and retry behavior
 
-The generated Compose service would mount `bundle` at `/configs`, set
-container-local env vars, and publish the right ports for that vehicle. This
-keeps the runtime image simple while making fleet launches repeatable.
+Direct mode uses `tcp:127.0.0.1:(5760 + INSTANCE * 10)`. This endpoint normally
+supports one client: clients must wait until initialization releases it and the
+container becomes healthy. With MAVProxy, the wrapper adds a private loopback
+`tcpin` output at `20000 + INSTANCE`. `PLAN_UPLOAD_MASTER` can select an explicit
+endpoint but cannot change the configured target identity.
 
+The uploader:
 
-## Multi-SITL Design Constraints
+- Uses MAVLink 2 and source identity 255/190.
+- Waits for the selected autopilot, ignoring unrelated/GCS heartbeats.
+- Keeps the connection open while waiting for startup and closes it on failure.
+- Uploads mission, fence and rally serially with independent mission types.
+- Retries `MISSION_COUNT` and the last item when responses are lost.
+- Answers repeated `MISSION_REQUEST_INT` and legacy `MISSION_REQUEST`, including
+  requests for the last item while waiting for ACK.
+- Filters responses by source, destination and mission type.
+- Requires an accepted `MISSION_ACK` after all items were requested.
+- Uses one overall `PLAN_UPLOAD_TIMEOUT` deadline for connection and uploads.
 
-When running many vehicles:
+The runner independently enforces its startup deadline and monitors vehicle and
+initializer processes. Upload failure tears down the run; retained state/logs
+remain available for diagnosis. Across multiple plan types there is no atomic
+vehicle-side transaction: a later upload failure can follow an earlier success.
+The vehicle is not reported ready in that case.
 
-- use one container per SITL instance
-- mount one bundle per service at `/configs`
-- keep `INSTANCE`, `SYSID`, ports, frame/model, params, mission, initial-state
-  script, fence, and rally values service-local
-- avoid host-global temp names and shared writable config files
-- allow generated Compose files to reference bundle paths directly
-- keep staged runtime files inside each container's ArduPilot working tree
+## Why not Lua for mission preload?
 
-This keeps fleet orchestration simple: a Compose builder can generate one
-service per vehicle, each with its own mounted bundle and env block, rather than
-trying to multiplex artifacts inside one container.
+ArduPilot Lua exposes `mission:clear`, `mission:set_item` and mission-item types,
+but not corresponding fence/rally replacement APIs. The old Lua mission loader
+also completed asynchronously and depended on scripting parameters. A shared
+MAVLink preload path gives all three types observable completion, one timeout
+and consistent failure semantics without changing upstream ArduPilot.
 
+User Lua remains appropriate for pose injection, simulated sensors and other
+runtime behavior. Its completion is not included in the plan-readiness signal.
 
-## Open Questions
+## Fleet and manifest direction
 
-- Which ground-station fence/rally export formats are worth importing alongside
-  the project-owned JSON format?
-- Should `MISSION_FILE` eventually move from Lua loading to the same Python
-  uploader as fence/rally for consistency?
-- Should mission/fence/rally upload be opt-in blocking startup, or should the
-  container stay up and report upload failure through logs?
-- Do we need a `SCENARIO_FILE` later that points to all artifacts for one
-  vehicle, with env vars reserved as overrides?
+A fleet layer should generate existing env vars, mounts and ports rather than
+make services share mutable input/state. Keep one bundle and writable run root
+per service.
+
+For future manifests:
+
+- Mission/fence/rally must choose exactly one file or inline representation.
+- Normalize inline definitions into native files before invoking the runtime.
+- Params may combine ordered files and a final inline override map.
+- Reference Lua code as files; generate separate structured script config.
+- Keep instance, system ID, image, home, model, outputs and endpoint allocation
+  explicit and service-local.
+
+Open work includes importing common ground-station plan formats, PX4-native
+initialization/readiness integration, and real transport tests against pinned
+ArduPilot versions. Host-only regression tests validate the protocol state
+machine but are not live autopilot qualification.

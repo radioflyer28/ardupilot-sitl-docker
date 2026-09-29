@@ -10,6 +10,27 @@ by development eras and notable commit ranges rather than semantic versions.
 
 ## Unreleased
 
+- Replaced Dockerfile-generated launch logic with a validated single-vehicle
+  runner, actual vehicle-process supervision, bounded shutdown and readiness.
+- Added owned run roots with `work/`, archived `history/`, exclusive locking,
+  fresh/resume state and effective configuration/status metadata. PX4 shares the
+  state/process wrapper but does not yet advertise MAVLink readiness.
+- Moved mounted vehicle metadata into a process-local overlay; upstream files
+  are no longer overwritten. Added `--validate` and `--print-effective-config`.
+- Added ordered `PARAM_FILES`; `PARAM_FILE` now layers over bundle parameters
+  rather than suppressing them. Managed CLI flags are parsed before resolution;
+  unsupported upstream passthrough flags now fail explicitly.
+- Unified mission/fence/rally preload through MAVLink with target verification,
+  retries and startup ACK requirements. Mission preload no longer needs Lua;
+  removed the bundled mission loader and mission-enabling parameter example.
+- Restage user scripts in the effective work directory on every launch,
+  preventing stale scripts and fixing `--use-dir` interaction.
+- Defaulted to direct TCP and loopback-only Compose port publication; added
+  per-service retained run volumes, health checks and shutdown grace periods.
+- Added host-only configuration, protocol and fake-process lifecycle tests.
+  Live pinned-release SITL validation remains outstanding; no image build is
+  implied by these checks.
+
 - Moved the chronological session/dev log to `docs/SESSION_SUMMARY.md`.
 - Added this changelog as the release-facing project history.
 - Added `Dockerfile.px4-sih` as a v1 sibling image for prebuilt PX4

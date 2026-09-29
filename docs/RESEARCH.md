@@ -39,8 +39,8 @@ Key findings:
   dynamics updates.
 - Mission loading is separate and can be handled through Lua mission APIs,
   MAVLink, or MAVProxy.
-- This repo implements `MISSION_FILE` with an image-provided Lua loader for
-  QGC WPL 110 mission files.
+- This repo implements `MISSION_FILE` through the shared MAVLink uploader for
+  QGC WPL 110 mission files; Lua is not required for mission preload.
 
 Implemented recommendations:
 
@@ -82,7 +82,7 @@ Fence/rally bindings are read/status oriented in the local checkout.
 
 Key findings:
 
-- `MISSION_FILE` can remain Lua-backed for QGC WPL 110 mission files.
+- `MISSION_FILE` now uses MAVLink for observable, blocking startup completion.
 - `QGC WPL 110` should not be stretched to represent geofence or rally data.
 - Fence and rally are uploaded through MAVLink mission protocol tooling with
   `MAV_MISSION_TYPE_FENCE` and `MAV_MISSION_TYPE_RALLY`.
@@ -93,8 +93,8 @@ Implemented recommendations:
 
 - Add `FENCE_FILE` and `RALLY_FILE` env vars with the same path semantics as
   `MISSION_FILE`.
-- Use a small Python/pymavlink uploader for fence/rally after SITL is accepting
-  MAVLink.
+- Use a small Python/pymavlink uploader for mission/fence/rally after a verified
+  target heartbeat, with retries, identity filtering and accepted ACKs.
 - Keep per-vehicle artifacts grouped under directories such as `missions/`,
   `fences/`, `rally/`, and `scripts/`.
 - Keep env vars as the low-level interface for one-off SITLs and generated
@@ -128,8 +128,8 @@ Key findings:
 - SITL defaults to the filesystem logging backend for onboard logs.
 - `LOG_DISARMED=1` enables `.BIN` logging before arming when startup analysis
   is needed.
-- `sim_vehicle.py --use-dir` moves SITL state and output into a named run
-  directory, which is the simplest volume-mounted path for `.BIN` logs.
+- Managed `--use-dir` selects an owned run root; current vehicle state and
+  `.BIN` logs live beneath `work/`, with fresh-start archives under `history/`.
 - `sim_vehicle.py --aircraft` is passed to MAVProxy and is the practical
   MAVProxy-side directory selector for `.tlog` files.
 - `NO_MAVPROXY=1` does not produce a MAVProxy `.tlog`; use an external GCS or
@@ -139,6 +139,46 @@ Feeds:
 
 - `README.md`: user-facing commands for mounted artifact directories.
 - `docs/DESIGN.md`: durable distinction between `.BIN` and `.tlog` producers.
+
+
+## External Physics and Flight-Dynamics Simulators
+
+Status: surveyed; no external backend is bundled or validated with these images
+
+Detailed note:
+
+```text
+docs/EXTERNAL_SIMULATORS.md
+```
+
+Summary:
+
+Modern Gazebo is a documented external-simulator option for both autopilots;
+JSBSim is another cross-autopilot FDM option, with PX4's integration
+community-supported. Other options and support levels differ by autopilot.
+External simulators require their own bridge, model, and dependencies; PX4 SIH
+remains an internal uORB simulator rather than an external backend. FlightGear
+used as ArduPilot's standard SITL viewer is not itself the physics backend.
+
+
+## Runtime Profiles and External Dynamics Architecture
+
+Status: research and proposed design captured; no external integration experiments
+or image builds performed for this design work
+
+Detailed note: [RUNTIME_PROFILES.md](RUNTIME_PROFILES.md).
+
+- Distinguishes the four autopilot/internal-or-external profiles from image,
+  service, adapter and scenario counts.
+- Recommends separate external-dynamics services with native bridge placement,
+  explicit capability contracts and release/model compatibility tuples.
+- Captures clock ownership, readiness, coordinated reset, initial conditions and
+  trim, container transport, signal mappings, fidelity/repeatability, rendering
+  and asset/licensing questions with upstream sources.
+- Defines four qualification investigations before generalizing: transport and
+  isolation; clock and lifecycle; reset and initialization; signal/fidelity/cost.
+
+Feeds: `DESIGN.md` for architectural direction and `FUTURE_WORK.md` for execution.
 
 
 ## PX4 SIH Runtime

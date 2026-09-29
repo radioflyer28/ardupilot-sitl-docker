@@ -186,7 +186,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     python3-pexpect \
     screen
 
-RUN install -d -m 0755 /usr/local/bin /usr/local/share/ardupilot-sitl /configs \
+RUN install -d -m 0755 /usr/local/bin /configs /home/${USER_NAME}/runs \
     && chown -R ${USER_NAME}:${USER_NAME} /home/${USER_NAME} /${USER_NAME}
 
 COPY --from=builder --chown=${USER_NAME}:${USER_NAME} /home/${USER_NAME}/ardupilot /home/${USER_NAME}/ardupilot
@@ -194,98 +194,15 @@ COPY --from=builder --chown=${USER_NAME}:${USER_NAME} /home/${USER_NAME}/venv-ar
 COPY --from=builder --chown=${USER_NAME}:${USER_NAME} /home/${USER_NAME}/.ardupilot_env /home/${USER_NAME}/.ardupilot_env
 COPY --from=builder --chown=${USER_NAME}:${USER_NAME} /home/${USER_NAME}/Micro-XRCE-DDS-Gen/scripts /home/${USER_NAME}/Micro-XRCE-DDS-Gen/scripts
 COPY docker/resolve-sitl-config.py /usr/local/bin/resolve-sitl-config.py
-COPY docker/install-sitl-lua.sh /usr/local/bin/install-sitl-lua.sh
 COPY docker/upload-plan-artifacts.py /usr/local/bin/upload-plan-artifacts.py
-COPY docker/load-mission.lua /usr/local/share/ardupilot-sitl/load-mission.lua
+COPY docker/run-sitl.sh docker/run-sitl.py docker/sitl_config.py docker/run_state.py docker/launch-sitl.py docker/sitl-terminal.py /usr/local/bin/
+COPY docker/ardupilot-entrypoint.sh /usr/local/bin/ardupilot_entrypoint.sh
 
 RUN printf '%s\n' \
         'source ~/.ardupilot_env' \
         > /home/${USER_NAME}/.bashrc \
     && chown ${USER_NAME}:${USER_NAME} /home/${USER_NAME}/.bashrc \
-    && printf '%s\n' \
-        '#!/bin/bash' \
-        'set -e' \
-        "source /home/${USER_NAME}/.ardupilot_env" \
-        'if [ "$#" -eq 0 ]; then' \
-        '    exec /usr/local/bin/run-sitl.sh' \
-        'fi' \
-        'if [ "${1#-}" != "$1" ]; then' \
-        '    exec /usr/local/bin/run-sitl.sh "$@"' \
-        'fi' \
-        'exec "$@"' \
-        > /usr/local/bin/ardupilot_entrypoint.sh \
-    && printf '%s\n' \
-        '#!/bin/bash' \
-        'set -e' \
-        "cd /home/${USER_NAME}/ardupilot" \
-        'extra_args=()' \
-        'plan_args=()' \
-        'plan_upload_master="${PLAN_UPLOAD_MASTER:-}"' \
-        'cli_no_mavproxy=0' \
-        '/usr/local/bin/install-sitl-lua.sh' \
-        'for arg in "$@"; do' \
-        '    if [ "${arg}" = "--no-mavproxy" ]; then' \
-        '        cli_no_mavproxy=1' \
-        '    fi' \
-        'done' \
-        'no_mavproxy_requested="${NO_MAVPROXY:-0}"' \
-        'if [ "${cli_no_mavproxy}" = "1" ]; then' \
-        '    no_mavproxy_requested=1' \
-        'fi' \
-        'if [ -n "${FENCE_FILE:-}" ]; then' \
-        '    plan_args+=(--fence "${FENCE_FILE}")' \
-        'fi' \
-        'if [ -n "${RALLY_FILE:-}" ]; then' \
-        '    plan_args+=(--rally "${RALLY_FILE}")' \
-        'fi' \
-        'if [ "${NO_MAVPROXY:-0}" = "1" ]; then' \
-        '    extra_args+=(--no-mavproxy)' \
-        'fi' \
-        'mavproxy_args=()' \
-        'if [ -n "${PROXY:-}" ]; then' \
-        '    mavproxy_args+=("${PROXY}")' \
-        'fi' \
-        'if [ "${#plan_args[@]}" -gt 0 ] && [ -z "${plan_upload_master}" ]; then' \
-        '    direct_tcp_port=$((5760 + INSTANCE * 10))' \
-        '    if [ "${no_mavproxy_requested}" = "1" ]; then' \
-        '        plan_upload_master="tcp:127.0.0.1:${direct_tcp_port}"' \
-        '    else' \
-        '        plan_upload_port=$((5761 + INSTANCE * 10))' \
-        '        plan_upload_master="tcp:127.0.0.1:${plan_upload_port}"' \
-        '        mavproxy_args+=("--out=tcpin:127.0.0.1:${plan_upload_port}")' \
-        '    fi' \
-        'fi' \
-        'if [ "${#mavproxy_args[@]}" -gt 0 ]; then' \
-        '    extra_args+=(-m "${mavproxy_args[*]}")' \
-        'fi' \
-        'mapfile -t config_args < <(/usr/local/bin/resolve-sitl-config.py)' \
-        'extra_args+=("${config_args[@]}")' \
-        'sitl_cmd=(Tools/autotest/sim_vehicle.py -j "${JOBS:-2}" --vehicle "${VEHICLE}" --frame "${FRAME}" -I "${INSTANCE}" --sysid "${SYSID}" --custom-location="${LAT},${LON},${ALT},${DIR}" -w --no-rebuild --speedup "${SPEEDUP}" "${extra_args[@]}")' \
-        'if [ "${#plan_args[@]}" -eq 0 ]; then' \
-        '    exec "${sitl_cmd[@]}" "$@"' \
-        'fi' \
-        '"${sitl_cmd[@]}" "$@" &' \
-        'sitl_pid=$!' \
-        'cleanup() {' \
-        '    local status="${1:-0}"' \
-        '    if kill -0 "${sitl_pid}" 2>/dev/null; then' \
-        '        kill "${sitl_pid}" 2>/dev/null || true' \
-        '        wait "${sitl_pid}" 2>/dev/null || true' \
-        '    fi' \
-        '    exit "${status}"' \
-        '}' \
-        'trap "cleanup 130" INT' \
-        'trap "cleanup 143" TERM' \
-        'set +e' \
-        '/usr/local/bin/upload-plan-artifacts.py --config-dir "${SITL_CONFIG_DIR:-/configs}" --master "${plan_upload_master}" --timeout "${PLAN_UPLOAD_TIMEOUT:-60}" "${plan_args[@]}"' \
-        'upload_status=$?' \
-        'set -e' \
-        'if [ "${upload_status}" -ne 0 ]; then' \
-        '    cleanup "${upload_status}"' \
-        'fi' \
-        'wait "${sitl_pid}"' \
-        > /usr/local/bin/run-sitl.sh \
-    && chmod +x /usr/local/bin/ardupilot_entrypoint.sh /usr/local/bin/run-sitl.sh /usr/local/bin/resolve-sitl-config.py /usr/local/bin/install-sitl-lua.sh /usr/local/bin/upload-plan-artifacts.py
+    && chmod +x /usr/local/bin/ardupilot_entrypoint.sh /usr/local/bin/run-sitl.sh /usr/local/bin/resolve-sitl-config.py /usr/local/bin/upload-plan-artifacts.py /usr/local/bin/sitl-terminal.py
 
 USER ${USER_NAME}
 WORKDIR /home/${USER_NAME}/ardupilot
@@ -310,7 +227,7 @@ ENV DIR=55
 ENV VEHICLE=ArduCopter
 ENV FRAME=quad
 ENV SPEEDUP=1
-ENV NO_MAVPROXY=0
+ENV NO_MAVPROXY=1
 ENV SITL_CONFIG_DIR=/configs
 ENV VEHICLEINFO_JSON=
 ENV MODEL=
@@ -321,5 +238,9 @@ ENV FENCE_FILE=
 ENV RALLY_FILE=
 ENV PLAN_UPLOAD_MASTER=
 ENV PLAN_UPLOAD_TIMEOUT=60
+ENV SITL_STATE=fresh
+ENV SITL_STOP_TIMEOUT=10
+
+HEALTHCHECK --interval=5s --timeout=3s --start-period=65s --retries=3 CMD ["/usr/local/bin/run-sitl.sh", "--healthcheck"]
 
 ENTRYPOINT ["/usr/local/bin/ardupilot_entrypoint.sh"]

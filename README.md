@@ -48,11 +48,11 @@ Run headless without MAVProxy and expose direct SITL MAVLink TCP:
 docker run -d --rm \
   --env-file env.list \
   -e NO_MAVPROXY=1 \
-  -p 5760:5760/tcp \
+  -p 127.0.0.1:5760:5760/tcp \
   ardupilot-sitl:copter-4.6.3
 ```
 
-Connect from the host:
+Wait until Docker reports the container healthy, then connect from the host:
 
 ```bash
 mavproxy.py --master=tcp:127.0.0.1:5760
@@ -385,6 +385,12 @@ Available SIH model names come from PX4 and include `sihsim_quadx`,
 `sihsim_rover_ackermann`. Treat models other than `sihsim_quadx` as
 experimental until validated against the PX4 release you are using.
 
+PX4 uses the same owned `work/` and `history/` layout and
+`SITL_STATE=fresh|resume` policy. `PX4_RUN_DIR` must be empty or runner-owned;
+existing unmarked directories are rejected without deletion. Its process status
+is `running`, not MAVLink-ready: PX4 readiness and plan initialization remain
+separate future work.
+
 More PX4 SIH research and design notes live in `docs/PX4_SIH.md`.
 
 
@@ -404,30 +410,68 @@ FRAME           sim_vehicle.py frame/model. Default: quad
 SITL_CONFIG_DIR Runtime config directory. Default: /configs
 VEHICLEINFO_JSON Optional mounted vehicleinfo.json path
 MODEL           Optional sim_vehicle.py --model override
-PARAM_FILE      Optional file passed with --add-param-file
+PARAM_FILES     JSON array of ordered parameter file paths
+PARAM_FILE      Optional final env parameter layer (after bundle/PARAM_FILES)
 LUA_SCRIPT      Optional Lua script copied into ArduPilot scripts/ at startup
-MISSION_FILE    Optional QGC WPL 110 mission loaded through Lua scripting
+MISSION_FILE    Optional QGC WPL 110 mission uploaded through MAVLink
 FENCE_FILE      Optional geofence JSON uploaded with MAVLink mission protocol
 RALLY_FILE      Optional rally JSON uploaded with MAVLink mission protocol
-PLAN_UPLOAD_MASTER Optional MAVLink endpoint for fence/rally upload
-PLAN_UPLOAD_TIMEOUT Seconds to wait for fence/rally upload. Default: 60
+PLAN_UPLOAD_MASTER Optional initialization endpoint, verified against SYSID/component 1
+PLAN_UPLOAD_TIMEOUT Total initialization deadline in seconds. Default: 60
+SITL_RUN_DIR    Owned run directory (CLI alias: --use-dir)
+ARTIFACTS_DIR   Run directory parent; uses instance_<INSTANCE>
+SITL_STATE      fresh (default) or resume
+SITL_STOP_TIMEOUT Graceful process-group shutdown deadline. Default: 10 seconds
 LAT             Custom home latitude
 LON             Custom home longitude
 ALT             Custom home altitude in meters
 DIR             Custom home heading in degrees
 SPEEDUP         Simulation speed multiplier. Default: 1
-NO_MAVPROXY     Set to 1 to append --no-mavproxy. Default: 0
-PROXY           Optional extra MAVProxy args passed with -m/--mavproxy-args
-JOBS            sim_vehicle.py -j value at runtime. Default: 2
+NO_MAVPROXY     1 selects direct TCP; 0 enables MAVProxy. Default: 1
+PROXY           MAVProxy --out, --logfile, and --streamrate options only
 ```
+
+The managed runner validates configuration before staging or launch. Scalar CLI
+options override env values; parameter files layer in this order: native frame
+defaults, bundle files, `PARAM_FILES`, `PARAM_FILE`, repeated CLI
+`--add-param-file` options. Later values win. `PARAM_FILE` no longer discards
+bundle parameters.
+
+Use `--validate` to check inputs without launching, or
+`--print-effective-config` to inspect the resolved JSON. Both require the
+prebuilt vehicle binary to be present. No upstream files are overwritten.
+
+Each run directory must be empty or previously initialized by this runner:
+
+```text
+work/                   current vehicle state, scripts, and logs
+history/<id>/           previous work directories archived by fresh starts
+effective-config.json   resolved launch configuration
+status.json             lifecycle state and recent supervisor timestamp
+```
+
+The default is `/tmp/ardupilot-sitl/instance_<INSTANCE>`. `fresh` archives old
+state and starts clean; `resume` preserves state. Both replace managed scripts
+and re-upload explicitly selected plans. Retention is manual: archive history
+can grow. Mount a writable run directory to retain it after container removal;
+bind mounts must be writable by the image user (default UID 1000).
+
+Readiness requires the expected autopilot heartbeat, accepted uploads for every
+requested plan, and a live vehicle process. It does **not** mean ready to arm,
+GPS/EKF healthy, or user Lua completed. In direct TCP mode, connect external
+clients only after the container becomes healthy; initialization temporarily
+owns that single-client connection. `run-sitl.sh --healthcheck` checks the active
+run. A vehicle/launcher crash fails the container. Shutdown terminates the owned
+process group, waits up to `SITL_STOP_TIMEOUT`, then kills remaining processes.
+Set Docker's stop timeout longer than that deadline (Compose uses 20 seconds).
 
 `INSTANCE` does not automatically change `SYSID`. For multiple vehicles, set
 both:
 
 ```bash
-docker run ... -e INSTANCE=0 -e SYSID=1 -p 5760:5760/tcp ...
-docker run ... -e INSTANCE=1 -e SYSID=2 -p 5770:5770/tcp ...
-docker run ... -e INSTANCE=2 -e SYSID=3 -p 5780:5780/tcp ...
+docker run ... -e INSTANCE=0 -e SYSID=1 -p 127.0.0.1:5760:5760/tcp ...
+docker run ... -e INSTANCE=1 -e SYSID=2 -p 127.0.0.1:5770:5770/tcp ...
+docker run ... -e INSTANCE=2 -e SYSID=3 -p 127.0.0.1:5780:5780/tcp ...
 ```
 
 
@@ -512,14 +556,13 @@ docker run -it --rm \
   ardupilot-sitl:copter-4.6.3
 ```
 
-Relative `model` JSON paths and `default_params_filename` paths from the
-mounted `vehicleinfo.json` are resolved relative to the mounted file's
-directory. The wrapper copies the mounted `vehicleinfo.json` over
-ArduPilot's runtime `Tools/autotest/pysim/vehicleinfo.json` before launching
-`sim_vehicle.py`.
+Relative `model` JSON paths and `default_params_filename` paths resolve against
+the mounted file's directory. A process-local overlay supplies the selected
+vehicle/frame metadata to upstream `sim_vehicle.py`; installed upstream files
+remain unchanged. Custom frame names must have an explicit bundle entry.
 
-`MODEL` and `PARAM_FILE` still work with a mounted `vehicleinfo.json`. When
-set, they override the model or params inferred from the mounted JSON.
+`MODEL` overrides the model. `PARAM_FILE` adds a final env parameter layer on
+top of the bundle; `PARAM_FILES` accepts an ordered JSON array of paths.
 
 
 Runtime Lua Scripts
@@ -541,8 +584,9 @@ configs/my_quad/
     initial-state.lua
 ```
 
-When `$SITL_CONFIG_DIR/scripts/` exists, the wrapper copies its contents into
-the ArduPilot working `scripts/` directory before launching `sim_vehicle.py`.
+The wrapper replaces `<run-dir>/work/scripts/` from the mounted bundle on every
+start, including resume. Removed scripts therefore cannot leak into a later run.
+The vehicle uses that same work directory even when `--use-dir` is selected.
 
 For one explicit script, set `LUA_SCRIPT`:
 
@@ -612,20 +656,19 @@ docker run -it --rm \
   ardupilot-sitl:copter-4.6.3
 ```
 
-Absolute `MISSION_FILE` paths are used as-is. Relative paths are resolved under
-`SITL_CONFIG_DIR`. The wrapper stages the selected mission into the ArduPilot
-working `missions/` directory and installs an image-provided `load-mission.lua`
-script before `sim_vehicle.py` starts.
+Absolute `MISSION_FILE` paths are used as-is; relative paths resolve under
+`SITL_CONFIG_DIR`. The entire file is validated before launch and uploaded using
+`MAV_MISSION_TYPE_MISSION` before readiness. This works with or without MAVProxy
+and does not require Lua or `SCR_ENABLE`.
 
-Mission loading uses ArduPilot Lua scripting, so include `SCR_ENABLE 1` in the
-selected params. Unlike MAVProxy `wp load`, this path also works when
-`NO_MAVPROXY=1`.
+Selected empty plans clear that plan type. Omitted plans are untouched by the
+uploader (fresh state starts empty; resume retains vehicle state). Upload
+failure fails startup; no automatic arming or mission start is performed.
 
 This repo includes a copyable mission example:
 
 ```text
 configs/examples/mission/
-  mission.parm
   missions/
     simple-copter.waypoints
 ```
@@ -636,7 +679,6 @@ Run it against the stock Copter quad frame:
 docker run -it --rm \
   --env-file env.list \
   -v "$PWD/configs/examples/mission:/configs:ro" \
-  -e PARAM_FILE=mission.parm \
   -e MISSION_FILE=missions/simple-copter.waypoints \
   ardupilot-sitl:copter-4.6.3
 ```
@@ -723,14 +765,15 @@ then leaves the container running normally. When `NO_MAVPROXY=1`, it uploads
 to direct SITL TCP. When MAVProxy is enabled and `PLAN_UPLOAD_MASTER` is unset,
 the wrapper adds a private in-container MAVProxy `tcpin` output for the upload.
 
-Override `PLAN_UPLOAD_MASTER` only when you want the uploader to connect to a
-specific endpoint, for example `tcp:127.0.0.1:5761`. `PLAN_UPLOAD_TIMEOUT`
-defaults to 60 seconds.
+The private MAVProxy upload/readiness port is `20000 + INSTANCE`, avoiding
+SITL serial ports. `PLAN_UPLOAD_MASTER` can override the initialization endpoint;
+its heartbeat must match `SYSID` and autopilot component 1. The 60-second
+`PLAN_UPLOAD_TIMEOUT` is one overall startup deadline, not a fresh timeout per
+artifact. The uploader retries count/item messages, honors repeated requests,
+and filters acknowledgments by source, destination, and plan type.
 
-When combining fence/rally upload with custom MAVProxy outputs, prefer the
-`PROXY` env var so the wrapper can add its private upload output too. If you
-pass your own trailing `-m/--mavproxy-args` after the image name, set
-`PLAN_UPLOAD_MASTER` to an endpoint exposed by those MAVProxy args.
+Use `PROXY` or `-m/--mavproxy-args` for `--out`, `--logfile`, or `--streamrate`.
+Managed master-link and startup-command overrides are rejected.
 
 This repo includes a copyable plan-artifacts example:
 
@@ -840,11 +883,26 @@ mavproxy.py --master=tcp:127.0.0.1:5770
 mavproxy.py --master=tcp:127.0.0.1:5780
 ```
 
-Stop them:
+Wait for readiness before connecting clients:
+
+```bash
+docker compose -f compose.sitl.yml up -d --wait
+```
+
+Ports bind to host loopback only. Change the bind address deliberately if remote
+access is required. Each service has its own retained named run volume; the
+volume target assumes the default image user/home. `SITL_STATE=fresh` archives
+prior work on restart. Use a Compose override with `SITL_STATE: resume` to retain
+active state instead. Configure per-service read-only `/configs` mounts for
+different scenarios.
+
+Stop them (named volumes are retained):
 
 ```bash
 docker compose -f compose.sitl.yml down
 ```
+
+`down -v` explicitly deletes retained run volumes.
 
 
 Passing sim_vehicle.py Args
@@ -852,14 +910,16 @@ Passing sim_vehicle.py Args
 
 Arguments placed after the image name are handled by the entrypoint.
 
-If the first argument starts with `-`, the arguments are appended to
-`sim_vehicle.py`:
+If the first argument starts with `-`, the managed runner parses it before
+resolving configuration. Supported options are shown by `--help`; unknown or
+conflicting upstream flags are rejected rather than silently bypassing derived
+ports, run paths, and initialization settings:
 
 ```bash
 docker run -it --rm \
   --env-file env.list \
   ardupilot-sitl:copter-4.6.3 \
-  --no-mavproxy --udp
+  --no-mavproxy --instance 2 --sysid 3
 ```
 
 If the first argument does not start with `-`, it is run as a command instead:
@@ -874,8 +934,10 @@ Inside a debug shell, prefer the wrapper:
 run-sitl.sh --no-mavproxy
 ```
 
-If you call `sim_vehicle.py` manually in the runtime image, include
-`--no-rebuild` because compilers are not installed in the final stage:
+For unsupported upstream features (UDP serial transport, debuggers, multi-vehicle
+or peripheral launching), explicitly run upstream `sim_vehicle.py` in a debug
+shell. This bypasses managed configuration, staging, supervision, and readiness.
+Include `--no-rebuild` because compilers are not installed:
 
 ```bash
 Tools/autotest/sim_vehicle.py -v ArduCopter --frame quad --no-rebuild
@@ -894,7 +956,7 @@ Without MAVProxy:
 docker run -d --rm \
   --env-file env.list \
   -e NO_MAVPROXY=1 \
-  -p 5760:5760/tcp \
+  -p 127.0.0.1:5760:5760/tcp \
   ardupilot-sitl:copter-4.6.3
 ```
 
@@ -919,7 +981,7 @@ multiple clients, run MAVProxy outside the container:
 mavproxy.py \
   --master=tcp:127.0.0.1:5760 \
   --out=udp:127.0.0.1:14550 \
-  --out=tcpin:0.0.0.0:5761
+  --out=tcpin:127.0.0.1:5761
 ```
 
 
@@ -933,9 +995,9 @@ ArduPilot and MAVProxy produce different logs:
 .tlog  MAVLink telemetry log, normally written by MAVProxy or another GCS
 ```
 
-For `.BIN` logs, SITL's default filesystem logger writes under the run
-directory's `logs/` directory. You can mount a host artifact directory and pass
-`sim_vehicle.py --use-dir` after the image name:
+For `.BIN` logs, the vehicle logger writes under `<run-dir>/work/logs/`.
+Mount an empty writable host run directory and select it with `--use-dir`
+(or `SITL_RUN_DIR`). This also stages Lua scripts in the correct work directory:
 
 ```bash
 mkdir -p artifacts/uav0
@@ -949,13 +1011,14 @@ docker run -it --rm \
 
 Add params such as `LOG_DISARMED 1` when you need logs before arming.
 
-For `.tlog` logs, keep MAVProxy enabled and pass `--aircraft` to place
-MAVProxy state and telemetry logs in a named directory:
+For `.tlog` logs, enable MAVProxy explicitly (`env.list` defaults to direct mode)
+and pass `--aircraft` to choose its log directory:
 
 ```bash
 docker run -it --rm \
   --env-file env.list \
   -v "$PWD/artifacts/uav0:/artifacts/uav0" \
+  -e NO_MAVPROXY=0 \
   ardupilot-sitl:copter-4.6.3 \
   --use-dir /artifacts/uav0/sitl \
   --aircraft /artifacts/uav0/mavproxy

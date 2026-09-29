@@ -6,17 +6,14 @@ This file tracks likely improvements. Keep design rationale in
 
 ## Runtime Config
 
-- Add validation in `run-sitl.sh` or `resolve-sitl-config.py` that checks model
-  and param files before launch and prints concise errors.
 - Add a short-name config selector such as `VEHICLE_CONFIG=arducopter-quad`
   that resolves to a bundle under a known config root.
 - Generate env files or Compose overrides from config bundles.
-- Consider supporting multiple parameter files explicitly if a clear user
-  workflow appears. Keep the default direct path singular.
 - Add first-class initial-state config support on top of the copyable Lua
   example. The current recommendation is generated or externally mounted config
-  consumed by a Lua script that calls `sim:set_pose` on arm; see
-  `docs/INITIAL_STATE.md`.
+  consumed by a Lua script that calls `sim:set_pose` on arm for built-in dynamics;
+  see `docs/INITIAL_STATE.md`. External FDM initialization/trim needs its own
+  adapter contract, as described in `docs/RUNTIME_PROFILES.md`.
 - Add optional mission-start controls such as `MISSION_START_INDEX` or
   `MISSION_MODE=auto`, if users need the wrapper to do more than preload the
   mission.
@@ -49,28 +46,26 @@ This file tracks likely improvements. Keep design rationale in
   and PX4 SIH. The generator should emit native env vars and launch surfaces
   for each runtime rather than forcing a single autopilot's terminology across
   both.
-- Add a first-class artifact output convention for generated Compose services,
-  including per-vehicle `.BIN` log directories, MAVProxy `.tlog` directories
-  when MAVProxy is enabled, stdout/stderr capture, and metadata that records the
-  image tag, ArduPilot ref, config bundle, and env used for each run.
+- Extend effective run metadata with image digest, autopilot ref and input file
+  hashes; add optional archive retention limits. Generated Compose should reuse
+  the owned run-root/work/history convention rather than invent another layout.
 
 
 ## ArduPilot Integration
 
-- Evaluate an opt-in `sim_vehicle.py` patch or upstreamable option that allows
-  runtime `vehicleinfo.json` entries to provide `default_params_filename`
-  directly without wrapper-side resolution.
-- Revisit whether copying mounted `vehicleinfo.json` into the ArduPilot tree is
-  the best long-term mechanism, or whether an environment variable / CLI option
-  can select an alternate file.
+- Qualify the process-local `VehicleInfo` overlay and headless terminal hook
+  against pinned older Python-backed and newer JSON-backed ArduPilot releases.
+- Consider upstreaming an explicit metadata-file option to replace the overlay
+  adapter when upstream provides a stable equivalent.
 
 
 ## Build And Release
 
 - Add CI validation for Dockerfile syntax, shell scripts, JSON bundles, and the
   config-bundle generator.
-- Add a smoke test that starts a tiny SITL run with `NO_MAVPROXY=1` and verifies
-  the expected TCP port opens.
+- Add live SITL smoke tests for direct and MAVProxy modes, heartbeat readiness,
+  mission/fence/rally upload, binary death, SIGTERM, resume, and mounted scripts.
+  The host-only suite covers fake processes/protocol peers, not real firmware.
 - Consider publishing prebuilt images in addition to zstd Docker archives.
 - Document or automate multi-version batch builds.
 
@@ -90,8 +85,32 @@ This file tracks likely improvements. Keep design rationale in
   recommendation.
 - Add PX4-native examples for `PX4_PARAM_*` physics overrides, including SIH
   wind and mass/inertia-related params.
-- Add MAVLink mission, fence, and rally upload support for PX4 through the
-  future shared artifact uploader instead of ArduPilot Lua.
+- Integrate PX4-native heartbeat readiness and mission/fence/rally initialization
+  with the shared uploader; keep its current process-only `running` status
+  distinct from ArduPilot's initialization `ready` status.
+
+
+## External Dynamics and Runtime Profiles
+
+Design/research handoff: [RUNTIME_PROFILES.md](RUNTIME_PROFILES.md).
+
+- Select one initial ArduPilot/backend/model pairing and pin the autopilot,
+  simulator, bridge and assets. Choose JSBSim or modern Gazebo based on the
+  required dynamics, world interactions and sensor fidelity.
+- Run the four qualification investigations in the design note; preserve exact
+  configuration, commands, measured results and release-specific references.
+- Define backend capabilities from that evidence: transport, clock ownership,
+  signal mappings, initial conditions/trim, readiness, reset and resource needs.
+- Add explicit managed adapters instead of unrestricted upstream flag forwarding;
+  prevent duplicate simulator launch by upstream tooling.
+- Add external simulator packaging/services and a PX4 external-simulation variant
+  only after its native module/bridge requirements are identified. Four logical
+  runtime profiles do not require four independent implementations.
+- Extend scenario orchestration for coordinated failure/reset, shared-world
+  identities and world-level clock settings. Keep persisted autopilot files
+  distinct from checkpoint restoration.
+- Qualify mixed-autopilot worlds, larger fleets, cross-host transport and
+  checkpoint support separately; do not advertise them by inference.
 
 
 ## Runtime And Networking
@@ -109,7 +128,8 @@ This file tracks likely improvements. Keep design rationale in
   rally plans. It should emit the low-level env vars and mounts rather than
   replacing them.
 - Add Compose profiles for Copter, Plane, Rover, and Sub.
-- Document direct TCP vs MAVProxy fan-out with a small diagram or table.
+- Consider a dedicated router/initialization channel to remove the direct TCP
+  single-client startup handoff. Add optional user-Lua readiness handshakes.
 
 
 ## Repository Hygiene

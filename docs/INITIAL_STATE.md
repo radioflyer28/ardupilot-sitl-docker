@@ -185,8 +185,8 @@ Mission:
 - Lua mission APIs include `mission:clear`, `mission:set_item`, and
   `mission:set_current_cmd`.
 - ArduPilot ships `libraries/AP_Scripting/examples/mission-load.lua` for loading
-  QGC WPL files, and this repo includes an adapted image-provided loader wired
-  to the `MISSION_FILE` runtime env var.
+  QGC WPL files. This repo instead uploads `MISSION_FILE` through MAVLink so
+  mission completion participates in startup readiness without requiring Lua.
 - MAVProxy can load missions with `wp load`, but that path depends on MAVProxy
   being enabled or running externally.
 
@@ -209,11 +209,11 @@ SITL_CONFIG_DIR/
       optional-helper.lua
 ```
 
-At container start, the wrapper should copy the mounted `scripts/` directory
-into:
+At every start, including resume, the wrapper replaces the managed script
+set from the mounted bundle in:
 
 ```text
-/home/ardupilot/ardupilot/scripts/
+<SITL_RUN_DIR>/work/scripts/
 ```
 
 This matches ArduPilot's SITL scripting behavior: scripts in the working
@@ -327,8 +327,8 @@ remains a likely next step.
   `.parm`-adjacent custom file?
 - Should mode be numeric only, or should the wrapper support symbolic mode names
   per vehicle?
-- Should mission loading live in the same initial-state feature, or remain a
-  separate `MISSION_FILE` workflow?
+- Should user Lua expose an optional completion signal beyond the current
+  heartbeat/plan initialization readiness contract?
 - Do we need exact acceleration initialization, or are pose, rates, velocity,
   mode, and optional shove/twist disturbances enough?
 - Should `LUA_SCRIPT` be singular only, or should a future `LUA_SCRIPT_DIR` or

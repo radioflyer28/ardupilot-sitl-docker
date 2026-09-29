@@ -29,6 +29,7 @@ ENV/
 build/
 
 # Local logs, temp files, and runtime state
+artifacts/
 *.log
 *.tmp
 *.swp
