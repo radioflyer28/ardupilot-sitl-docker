@@ -1,0 +1,63 @@
+name: Host checks
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: host-checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.10'
+      - name: Host regression tests
+        run: python3 -m unittest discover -s docker -p 'test_*.py'
+      - name: Python and shell syntax
+        run: |
+          python3 -m py_compile scripts/populate-config-bundles.py docker/*.py
+          for script in scripts/*.sh docker/*.sh; do bash -n "$script"; done
+          sh -n docker/px4-rc.mavlink
+      - name: Checked-in JSON bundles
+        run: |
+          python3 - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+          paths = subprocess.check_output(['git', 'ls-files', '-z', 'configs']).decode().split('\0')
+          for name in paths:
+              if name.endswith('.json'):
+                  json.loads(Path(name).read_text())
+                  print(name)
+          PY
+      - name: Compose configuration only
+        run: |
+          docker compose -f compose.sitl.yml -f docker/compose.qualification.yml config --quiet
+          JSBSIM_MODELS_DIR=/tmp/config-only-models JSBSIM_MODEL=HeavyQuad docker compose -f compose.jsbsim.yml -f compose.jsbsim-models.yml config --quiet
+          JSBSIM_MODELS_DIR=/tmp/config-only-models JSBSIM_MODEL=HeavyQuad docker compose -f compose.jsbsim-split.yml -f compose.jsbsim-split-models.yml config --quiet
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          for filename in ('compose.sitl.yml', 'compose.px4-sih.yml', 'compose.jsbsim.yml', 'compose.jsbsim-split.yml'):
+              for address in ('127.0.0.1', '0.0.0.0'):
+                  env = dict(os.environ, PX4_SIH_IMAGE='px4-sih:config-only', SITL_BIND_ADDRESS=address)
+                  data = json.loads(subprocess.check_output(
+                      ['docker', 'compose', '-f', filename, 'config', '--format', 'json'], env=env))
+                  ports = [p for service in data['services'].values() for p in service.get('ports', [])]
+                  assert ports and all(p['host_ip'] == address for p in ports), (filename, address, ports)
+                  print(filename, address)
+          PY

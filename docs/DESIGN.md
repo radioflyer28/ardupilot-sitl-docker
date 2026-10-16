@@ -23,11 +23,15 @@ must not rebuild the autopilot or depend on an interactive developer terminal.
 Use four logical profiles: ArduPilot/internal, ArduPilot/external, PX4/internal
 (SIH), and PX4/external. These are capability/deployment profiles, not a mandate
 for four Dockerfiles, independent implementations or simultaneous containers.
-Only the ArduPilot SITL and PX4 SIH paths currently exist here; managed external
-backend integration remains future work.
+ArduPilot internal dynamics and PX4 SIH are qualified runtime paths. The
+ArduCopter/JSBSim F450 external path is experimental, with installed normal-EKF
+hover/yaw/land and coupled process-failure checks passing for one pinned tuple;
+see `RUNTIME_QUALIFICATION.md` for its narrower tested scope.
 
-Default to separately packaged/running external dynamics, keeping native bridges
-where their integrations require them. Share common runtime primitives, but
+Default single-vehicle ArduCopter/JSBSim to one combined container, with separate
+supervised processes and an isolated physics Python environment. Retain independent
+simulator/autopilot images and explicit split Compose for deployment flexibility.
+Shared-world simulators may still merit separate containers. Share primitives, but
 qualify each autopilot/backend/version/model combination. One shared world may
 serve several autopilot containers; an existing image may support more than one
 profile, while external backends may require multiple build variants.
@@ -35,6 +39,16 @@ profile, while external backends may require multiple build variants.
 [RUNTIME_PROFILES.md](RUNTIME_PROFILES.md) records the proposed architecture,
 research sources, clock/reset/state boundaries and experiments required before
 freezing external adapter or scenario-manifest contracts.
+
+The first experimental external pairing is ArduCopter with the JSBSim F450 quad-X model,
+using ArduPilot's existing JSON physics interface and a project-owned adapter
+outside the upstream checkout. Keep internal dynamics default and swap backends
+by scenario restart, not in flight. [ARDUCOPTER_JSBSIM.md](ARDUCOPTER_JSBSIM.md)
+owns the design, experimental usage, signal/lifecycle contracts and delivery gates.
+A read-only native JSBSim catalog can hold multiple named quad-X variants with
+shared engine assets. Select with `JSBSIM_MODEL`; preserve custom physical XML
+and the same direct-motor interface. Selection support is distinct from model
+qualification; packaged F450 remains the no-catalog default.
 
 ## Image architecture
 
@@ -169,13 +183,20 @@ groups; remaining processes are killed after `SITL_STOP_TIMEOUT`. Linux
 subreaping collects detached upstream children. Compose adds `init: true` and a
 stop grace period longer than the runner deadline.
 
-PX4 shares the state and process-lifecycle primitives, but currently reports
-`running`, not MAVLink-ready. Do not imply that PX4 has the same plan/readiness
-capabilities until its native transport is integrated and tested.
+PX4 shares state/process primitives and plan parsing/upload. Its startup hook adds
+a dedicated UDP link with loopback peer (local `30000 + INSTANCE`, peer `31000 + INSTANCE`),
+without consuming GCS/offboard links. The supervisor requires an initialized PX4
+heartbeat with the expected identity and accepted selected plans before `ready`.
+PX4 plan semantics and command/frame capabilities remain native and separately
+qualified; matching ready labels do not imply identical flight capabilities.
 
 ## Networking and plan initialization
 
-Host publications bind to loopback by default. Remote exposure must be explicit;
+Host publications for both runtime families bind to loopback by default;
+`SITL_BIND_ADDRESS` explicitly opts into LAN publication. PX4 bridge mode uses a
+supervised UDP byte relay with a stable native peer, avoiding native UDP peer
+pinning when host clients reconnect. Native host networking remains opt-in.
+Remote exposure must be explicit;
 these endpoints are not an authenticated remote management interface.
 
 Direct SITL TCP normally has one client. The initializer temporarily owns it;

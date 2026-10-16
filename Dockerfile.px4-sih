@@ -99,7 +99,13 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libstdc++6 \
     netbase \
     procps \
-    python3
+    python3 \
+    python3-venv
+
+# Wheels avoid a runtime compiler; a venv also supports externally managed Python.
+RUN python3 -m venv /opt/sitl-venv \
+    && /opt/sitl-venv/bin/python -m pip install --no-cache-dir --only-binary=:all: pymavlink==2.4.50
+ENV PATH="/opt/sitl-venv/bin:${PATH}"
 
 RUN install -d -m 0755 /usr/local/bin /configs /artifacts \
     && chown -R ${USER_NAME}:${USER_NAME} /home/${USER_NAME} /configs /artifacts
@@ -107,7 +113,7 @@ RUN install -d -m 0755 /usr/local/bin /configs /artifacts \
 COPY --from=builder --chown=${USER_NAME}:${USER_NAME} /opt/px4/PX4-Autopilot/build/${PX4_BUILD_DIR} /home/${USER_NAME}/PX4-Autopilot/build/${PX4_BUILD_DIR}
 COPY docker/px4-sih-entrypoint.sh /usr/local/bin/px4-sih-entrypoint.sh
 COPY docker/run-px4-sih.sh /usr/local/bin/run-px4-sih.sh
-COPY docker/run_state.py docker/px4-rc.mavlink /usr/local/bin/
+COPY docker/run_state.py docker/px4-rc.mavlink docker/upload-plan-artifacts.py docker/px4-gcs-relay.py /usr/local/bin/
 
 RUN chmod +x /usr/local/bin/px4-sih-entrypoint.sh /usr/local/bin/run-px4-sih.sh \
     && printf '%s\n' \
@@ -123,6 +129,7 @@ WORKDIR /home/${USER_NAME}
 EXPOSE 14540/udp
 EXPOSE 14550/udp
 EXPOSE 18570/udp
+EXPOSE 18670/udp
 EXPOSE 19410/udp
 EXPOSE 8888/udp
 
@@ -139,8 +146,18 @@ ENV ALT=618
 ENV DIR=
 ENV SPEEDUP=1
 ENV PX4_RUN_DIR=
+ENV PX4_GCS_RELAY=0
 ENV ARTIFACTS_DIR=
 ENV SITL_STATE=fresh
 ENV SITL_STOP_TIMEOUT=10
+ENV SITL_CONFIG_DIR=/configs
+ENV PLAN_UPLOAD_TIMEOUT=60
+ENV PLAN_UPLOAD_MASTER=
+ENV MISSION_FILE=
+ENV FENCE_FILE=
+ENV RALLY_FILE=
+
+HEALTHCHECK --interval=5s --timeout=3s --start-period=90s --retries=3 \
+    CMD ["/usr/local/bin/run-px4-sih.sh", "--healthcheck"]
 
 ENTRYPOINT ["/usr/local/bin/px4-sih-entrypoint.sh"]

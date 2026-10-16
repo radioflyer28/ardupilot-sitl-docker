@@ -14,7 +14,7 @@ import unittest
 from unittest.mock import patch
 
 import sitl_config
-from run_state import RunDirectory, atomic_json, healthcheck
+from run_state import RunDirectory, atomic_json, healthcheck, px4_initializer
 
 HERE = Path(__file__).resolve().parent
 
@@ -185,21 +185,106 @@ class RunDirectoryTests(Fixture):
 
 
 class PX4Tests(Fixture):
-    def test_native_env_mapping_and_owned_work_directory(self):
+    def native(self, body="exec sleep 60", autopilot=12):
         build = self.root / "px4/build/px4_sitl_sih"
         (build / "bin").mkdir(parents=True)
         (build / "etc").mkdir()
         binary = build / "bin/px4"
-        binary.write_text('#!/bin/sh\nprintf "%s|%s|%s|%s\\n" "$PWD" "$PX4_SIM_MODEL" "$PX4_PARAM_MAV_SYS_ID" "$*" > native.txt\n')
+        binary.write_text('#!/bin/sh\nprintf "%s|%s|%s|%s\\n" "$PWD" "$PX4_SIM_MODEL" "$PX4_PARAM_MAV_SYS_ID" "$*" > native.txt\necho $$ > native.pid\n' + body + '\n')
         binary.chmod(0o755)
+        package = self.root / "pymavlink"
+        package.mkdir()
+        (package / "__init__.py").write_text("")
+        (package / "mavutil.py").write_text('''from types import SimpleNamespace
+mavlink = SimpleNamespace(MAV_AUTOPILOT_PX4=12, MAV_AUTOPILOT_INVALID=8)
+class Heartbeat:
+    autopilot = ''' + str(autopilot) + '''
+    system_status = 3
+    def get_srcSystem(self): return 3
+    def get_srcComponent(self): return 1
+class Connection:
+    def wait_heartbeat(self, **kw): return Heartbeat()
+    def close(self): pass
+def mavlink_connection(*args, **kwargs): return Connection()
+''')
         output = self.root / "px4-run"
-        env = {**os.environ, "PX4_ROOT": str(self.root / "px4"), "PX4_RUN_DIR": str(output), "INSTANCE": "2", "SYSID": "3", "MODEL": "sihsim_quadx"}
-        result = subprocess.run(["bash", str(HERE / "run-px4-sih.sh")], env=env, capture_output=True, text=True, timeout=5)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        env = {**os.environ, "PX4_ROOT": str(self.root / "px4"), "PX4_RUN_DIR": str(output),
+               "INSTANCE": "2", "SYSID": "3", "MODEL": "sihsim_quadx", "PYTHONPATH": str(self.root),
+               "PLAN_UPLOAD_TIMEOUT": "2", "SITL_STOP_TIMEOUT": "0.3", "PX4_GCS_RELAY": "0"}
+        return output, env
+
+    def launch(self, env):
+        process = subprocess.Popen(["bash", str(HERE / "run-px4-sih.sh")], env=env,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        def cleanup():
+            if process.poll() is None:
+                process.terminate()
+            process.communicate(timeout=5)
+        self.addCleanup(cleanup)
+        return process
+
+    def test_native_env_mapping_and_owned_work_directory(self):
+        output, env = self.native()
+        process = self.launch(env)
+        deadline = time.monotonic() + 4
+        while not healthcheck(output) and process.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.02)
+        self.assertTrue(healthcheck(output))
         record = (output / "work/native.txt").read_text()
         self.assertIn(f"{output}/work|sihsim_quadx|3|-i 2", record)
+        check = subprocess.run(["bash", str(HERE / "run-px4-sih.sh"), "--healthcheck"], env=env, capture_output=True, timeout=3)
+        self.assertEqual(check.returncode, 0)
+        process.terminate()
+        stdout, stderr = process.communicate(timeout=5)
+        self.assertEqual(process.returncode, 143, stdout + stderr)
         self.assertEqual(json.loads((output / "status.json").read_text())["state"], "stopped")
         self.assertFalse(healthcheck(output))
+
+    def test_explicit_zero_target_does_not_fall_back_to_env(self):
+        with patch.dict(os.environ, {"SYSID": "3", "INSTANCE": "2"}):
+            with self.assertRaises(ValueError):
+                px4_initializer(SimpleNamespace(target_system=0, timeout=1, master=None))
+
+    def test_malformed_plan_fails_before_run_directory_creation(self):
+        output, env = self.native()
+        plan = self.root / "bad.waypoints"
+        plan.write_text("QGC WPL 110\ninvalid\n")
+        process = self.launch({**env, "MISSION_FILE": str(plan)})
+        process.communicate(timeout=5)
+        self.assertNotEqual(process.returncode, 0)
+        self.assertFalse(output.exists())
+
+    def test_early_successful_binary_exit_is_not_ready(self):
+        output, env = self.native("exit 0")
+        process = self.launch(env)
+        process.communicate(timeout=5)
+        self.assertEqual(process.returncode, 1)
+        self.assertEqual(json.loads((output / "status.json").read_text())["state"], "failed")
+        self.assertFalse(healthcheck(output))
+
+    def test_wrong_autopilot_times_out_and_stops_child(self):
+        output, env = self.native(autopilot=3)
+        process = self.launch({**env, "PLAN_UPLOAD_TIMEOUT": "0.3"})
+        process.communicate(timeout=5)
+        self.assertEqual(process.returncode, 1)
+        self.assertEqual(json.loads((output / "status.json").read_text())["state"], "failed")
+        self.assertFalse(healthcheck(output))
+        with self.assertRaises(ProcessLookupError):
+            os.kill(int((output / "work/native.pid").read_text()), 0)
+
+    def test_cancel_initialization_clears_health_and_stops_child(self):
+        output, env = self.native(autopilot=3)
+        process = self.launch(env)
+        deadline = time.monotonic() + 3
+        while not (output / "work/native.pid").exists() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        process.terminate()
+        process.communicate(timeout=5)
+        self.assertEqual(process.returncode, 143)
+        self.assertEqual(json.loads((output / "status.json").read_text())["state"], "stopped")
+        self.assertFalse(healthcheck(output))
+        with self.assertRaises(ProcessLookupError):
+            os.kill(int((output / "work/native.pid").read_text()), 0)
 
 
 class PackagingTests(unittest.TestCase):
@@ -273,9 +358,10 @@ class PX4IdentityTests(unittest.TestCase):
             script = root / "init.d-posix/px4-rc.mavlink"
             script.parent.mkdir()
             script.write_text('printf "links-started\\n"\n')
-            result = subprocess.run(["sh", "-c", 'param() { printf "%s\\n" "$*"; }; . "$1"', "test", str(HERE / "px4-rc.mavlink")],
-                                    env={**os.environ, "PX4_RUNTIME_ETC": str(root), "PX4_PARAM_MAV_SYS_ID": "7"}, capture_output=True, text=True, check=True)
-            self.assertEqual(result.stdout.splitlines(), ["set MAV_SYS_ID 7", "links-started"])
+            result = subprocess.run(["sh", "-c", 'param() { printf "%s\\n" "$*"; }; mavlink() { printf "%s\\n" "$*"; }; . "$1"', "test", str(HERE / "px4-rc.mavlink")],
+                                    env={**os.environ, "PX4_RUNTIME_ETC": str(root), "PX4_PARAM_MAV_SYS_ID": "7", "px4_instance": "2"}, capture_output=True, text=True, check=True)
+            self.assertEqual(result.stdout.splitlines(), ["set MAV_SYS_ID 7", "links-started",
+                "start -u 30002 -o 31002 -t 127.0.0.1 -m minimal -r 10000"])
 
 
 class LifecycleTests(Fixture):
@@ -429,6 +515,13 @@ class UploadTests(unittest.TestCase):
         with self.assertRaises(upload.PlanError):
             upload.upload_items(self.master([]), Message("HEARTBEAT"), "fence", self.items, 0.02)
         self.assertLess(time.monotonic() - start, 0.5)
+
+    def test_connect_requires_selected_autopilot_family(self):
+        stream = iter([Message("HEARTBEAT", autopilot=3), Message("HEARTBEAT", autopilot=12)])
+        conn = SimpleNamespace(wait_heartbeat=lambda **kw: next(stream), close=lambda: None)
+        with patch.object(upload, "load_mavutil", return_value=SimpleNamespace(mavlink=CONSTANTS, mavlink_connection=lambda *a, **kw: conn)):
+            _, heartbeat = upload.connect("mock", 1, expected_autopilot=12)
+            self.assertEqual(heartbeat.autopilot, 12)
 
     def test_connect_waits_for_initialized_autopilot(self):
         beats = []

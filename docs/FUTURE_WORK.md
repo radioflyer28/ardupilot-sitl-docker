@@ -62,10 +62,10 @@ This file tracks likely improvements. Keep design rationale in
 
 ## Build And Release
 
-- Add lightweight per-PR CI for host regression tests, syntax, JSON bundles and
-  config generation. Keep full firmware/image builds and live Docker suites
-  opt-in, scheduled or release-triggered; reuse published qualification images
-  where appropriate rather than rebuilding firmware on every PR.
+- Extend lightweight PR CI with config-generator fixture coverage. Existing host
+  regression/syntax/JSON/Compose checks avoid firmware/image builds and live
+  containers. Keep expensive live suites opt-in, scheduled or release-triggered,
+  reusing published qualification images where appropriate.
 - Extend the opt-in runtime/Compose live suites beyond Copter 4.6.3, pinned
   4.8.0-dev and PX4 SIH 1.16.0; integrate them with suitable CI. Installed
   entrypoint/health and ArduPilot Compose/host-port/volume checks now pass for the
@@ -79,31 +79,72 @@ This file tracks likely improvements. Keep design rationale in
 
 ## PX4 SIH
 
-- Validate `Dockerfile.px4-sih` against pinned PX4 release tags, starting with
-  the current stable PX4 release.
+- Extend PX4 image qualification beyond the pinned v1.16.0 quad SIH build to
+  newer stable releases and other models.
 - Track when PX4 release tags adopt `px4_sitl_sih` so the script can infer the
   narrower target for more than `main`/`master`.
 - Tighten `PX4_SUBMODULE_PATHS` after real build results identify the minimum
   submodule set required for `px4_sitl_sih`.
 - Consider factoring shared image output/cache/archive helpers out of the
   ArduPilot and PX4 build scripts if their behavior continues to converge.
-- Validate bridge-networked Docker operation for PX4 SIH and document the
-  required PX4 network env vars or parameters. Host networking remains the v1
-  recommendation.
+- Expand PX4 host-client networking coverage across platforms, offboard clients,
+  and real LAN peers. Default Compose uses bridge networking with localhost
+  publication; native host networking remains opt-in.
 - Add PX4-native examples for `PX4_PARAM_*` physics overrides, including SIH
   wind and mass/inertia-related params.
-- Integrate PX4-native heartbeat readiness and mission/fence/rally initialization
-  with the shared uploader; keep its current process-only `running` status
-  distinct from ArduPilot's initialization `ready` status.
+- Expand PX4 heartbeat/mission/fence/rally initialization qualification beyond
+  pinned SIH releases and common command/frame examples. Add flight-feasibility
+  checks separately from startup protocol acceptance.
 
 
 ## External Dynamics and Runtime Profiles
 
 Design/research handoff: [RUNTIME_PROFILES.md](RUNTIME_PROFILES.md).
 
-- Select one initial ArduPilot/backend/model pairing and pin the autopilot,
-  simulator, bridge and assets. Choose JSBSim or modern Gazebo based on the
-  required dynamics, world interactions and sensor fidelity.
+### First delivery: ArduCopter + JSBSim quad-X
+
+- Both local (default combined container) and external (optional split containers)
+  deployment modes share the adapter/model implementation. Keep their lifecycle
+  qualification separate; dependency updates must preserve Python isolation.
+
+- Native multi-model read-only catalogs and `JSBSIM_MODEL` selection are
+  implemented; packaged F450 remains default. Custom quad-X physical assets do
+  not require an ArduPilot interface change. Qualify each model/tuning separately.
+
+Design and experimental usage: [ARDUCOPTER_JSBSIM.md](ARDUCOPTER_JSBSIM.md).
+Adapter, packaging and the scoped installed hover/yaw/land/failure checks pass.
+See [RUNTIME_QUALIFICATION.md](RUNTIME_QUALIFICATION.md#arducopterjsbsim-f450-qualification)
+for exact images and measured limits.
+Keep the adapter outside ArduPilot and use its existing JSON physics interface;
+no upstream fork is an expected prerequisite. Ordinary ArduPilot images default
+to internal dynamics; the dedicated combined image defaults to JSBSim.
+
+- [x] Select and pin one JSON-capable ArduCopter release, JSBSim/bindings version
+  and licensed quad-X model exposing independent rotor inputs. Review propulsion,
+  inertia and ground-contact capabilities before accepting the model.
+- [x] Implement a project-owned adapter for PWM-to-motor mapping, JSBSim stepping
+  and state/IMU conversion. Test channel/torque signs, frames, units, specific
+  force, timestamps and duplicate/restart handling.
+- [x] Package prebuilt runtimes and add managed backend selection, physics-aware
+  readiness and bounded shutdown. Installed helper hashes, physics exchange and
+  time progress pass; both process-death directions stop the coupled peer.
+- [x] Qualify individual-motor responses, normal-EKF takeoff, 10-second hover,
+  commanded yaw, landing and auto-disarm; retain physics truth and telemetry.
+- [ ] Extend startup qualification to autopilot-first/DNS delay, interrupted
+  transport and explicit cross-scenario packet injection. Separate Compose
+  projects have run concurrently, but that is not full isolation fault coverage.
+- [ ] Expand restart-based backend switching to a shared flight comparison harness
+  and quantify repeatability. The refreshed autopilot image passed installed
+  internal-physics regression; unsupported JSBSim resume is rejected. Internal
+  flight-equivalence and deterministic outcomes are not established.
+- [ ] Add commanded roll/pitch manoeuvres and broader aircraft-fidelity checks
+  beyond the current motor-sign, stationary/free-fall, hover and yaw cases.
+
+Live engine swapping, airborne initialization, checkpoint restore and PX4 are
+later work, not acceptance requirements for this first slice.
+
+### Generalization after the first pairing
+
 - Run the four qualification investigations in the design note; preserve exact
   configuration, commands, measured results and release-specific references.
 - Define backend capabilities from that evidence: transport, clock ownership,

@@ -15,6 +15,14 @@ container should also use `--no-rebuild`, or use the included `run-sitl.sh`
 wrapper.
 
 
+Experimental JSBSim quadrotor physics defaults to one combined container through
+`compose.jsbsim.yml`, without modifying ArduPilot. `compose.jsbsim-split.yml`
+retains the optional two-container deployment. See
+[ArduCopter + JSBSim](docs/ARDUCOPTER_JSBSIM.md) for build/run commands, backend
+switching, read-only multi-model catalogs (`JSBSIM_MODEL`) and qualification
+limits. Ordinary ArduPilot images default to internal physics; the dedicated
+combined JSBSim image defaults to JSBSim.
+
 Quick Start
 -----------
 
@@ -343,11 +351,27 @@ first build faster and prevents unused simulator assets from influencing the
 builder and final runtime image size. If a PX4 release needs a different set,
 override `PX4_SUBMODULE_PATHS`.
 
-Run with PX4's recommended simple Docker networking path:
+Default to bridge networking with a localhost-only host endpoint. Select an image
+built from this checkout with GCS relay support:
 
 ```bash
-docker run -it --rm --network host px4-sih:sihsim-quadx
+PX4_SIH_IMAGE=px4-sih:qualify-v1.16.0-localhost \
+  docker compose -f compose.px4-sih.yml up -d --wait
+mavproxy.py --master=udpout:127.0.0.1:18570
 ```
+
+Clients explicitly send MAVLink/GCS heartbeats to UDP `127.0.0.1:18570`; passive
+UDP autodiscovery is not provided in this mode. The supervised relay supports
+client reconnection and forwards replies to heartbeat-active clients.
+Set `SITL_BIND_ADDRESS` to the host's LAN IP for intentional LAN access, or
+`0.0.0.0` for all host interfaces. `PX4_GCS_PORT` changes the published host port.
+No custom firewall rules are installed. `SITL_BIND_ADDRESS` is a host-side
+Compose setting: export it or prefix the Compose command, rather than adding it
+to the container's `env.list`.
+
+Native `docker run --network host ...` remains an explicit alternative with
+PX4's normal UDP autodiscovery and native LAN-reachable listeners; leave
+`PX4_GCS_RELAY=0` (the image default) in that mode.
 
 PX4 SIH runtime envs intentionally reuse the common names where PX4 has native
 equivalents:
@@ -370,6 +394,7 @@ when you want to override that native instance behavior.
 PX4-native parameter overrides can be passed directly:
 
 ```bash
+# Explicit native host-network alternative:
 docker run -it --rm --network host \
   -e LAT=37.1971467 \
   -e LON=-80.5780381 \
@@ -387,9 +412,19 @@ experimental until validated against the PX4 release you are using.
 
 PX4 uses the same owned `work/` and `history/` layout and
 `SITL_STATE=fresh|resume` policy. `PX4_RUN_DIR` must be empty or runner-owned;
-existing unmarked directories are rejected without deletion. Its process status
-is `running`, not MAVLink-ready: PX4 readiness and plan initialization remain
-separate future work.
+existing unmarked directories are rejected without deletion. PX4 becomes `ready`
+(and Docker-healthy) after an initialized PX4 heartbeat from the expected SYSID,
+component 1, and accepted uploads for selected `MISSION_FILE`, `FENCE_FILE` and
+`RALLY_FILE`. Paths resolve under `SITL_CONFIG_DIR` (default `/configs`).
+`PLAN_UPLOAD_TIMEOUT` (default 60 seconds) bounds initialization; failures stop
+PX4 with nonzero status. `PLAN_UPLOAD_MASTER` optionally overrides the private
+loopback UDP endpoint; normal GCS/offboard ports remain available.
+
+This is not an arming, GPS/EKF, mission-feasibility or continuous telemetry check.
+PX4 treats mission row 0 as a real mission item, not ArduPilot's synthesized home.
+Omitted plans retain native state on resume; selected empty plans clear that type.
+Rebuild PX4 images for this contract; older images retain process-only status.
+See `docs/PX4_SIH.md` for native command/frame limitations.
 
 More PX4 SIH research and design notes live in `docs/PX4_SIH.md`.
 
@@ -855,7 +890,8 @@ Docker Compose: Multiple SITL Instances
 ---------------------------------------
 
 `compose.sitl.yml` starts three headless SITL containers with direct TCP MAVLink
-ports:
+ports, published on localhost by default. Set `SITL_BIND_ADDRESS` to the host LAN
+IP (or `0.0.0.0` for all interfaces) when LAN access is wanted:
 
 ```text
 sitl-0 -> INSTANCE=0, SYSID=1, TCP 5760
@@ -1049,6 +1085,12 @@ Runtime mission, fence, rally, and fleet artifact decisions live in
 `docs/PLAN_ARTIFACTS.md`.
 
 PX4 SIH runtime research and design notes live in `docs/PX4_SIH.md`.
+
+The [host-check workflow](.github/workflows/checks.yml) runs regression tests,
+Python/shell syntax, checked-in JSON and Compose configuration checks on PRs and
+primary-branch pushes. It does not build firmware/images or start live containers.
+Live image qualification remains an explicit opt-in CLI suite described in
+`docs/RUNTIME_QUALIFICATION.md`.
 
 Notable project changes live in `docs/CHANGELOG.md`.
 

@@ -9,7 +9,7 @@ with host TCP clients. The external ArduPilot checkout was not edited.
 
 ### Existing-image baseline
 
-The first checks used **existing local images with current repository helpers
+The first checks used **existing local images with then-current repository helpers
 mounted read-only at `/qualification`**, without building firmware or images.
 
 | Firmware environment | Existing image ID | Verified firmware identity |
@@ -25,8 +25,11 @@ port publication, cross-host routing or external flight dynamics.
 
 ## Reproduce without image builds
 
-Requirements: Docker access, the two existing image tags, Python 3 on the host,
+Requirements: Docker access, already-built image tags, Python 3 on the host,
 and a host checkout visible to Docker bind mounts. Run from the repository root.
+Current PX4 helpers require a pymavlink-equipped image such as the readiness image
+below; old baseline PX4 images lack that dependency. To reproduce the original
+process-only baseline instead, use the qualifier at commit `34a6d74` and its old tag.
 The image users must be able to write the artifact directories (tested with the
 default UID 1000). Choose a new/empty output directory each time.
 
@@ -35,8 +38,8 @@ python3 docker/qualify-runtime.py \
   --output artifacts/qualification-copter-4.6.3-final
 
 python3 docker/qualify-runtime.py \
-  --family px4 --image px4-sih:sihsim-quadx-v1.16.0 \
-  --output artifacts/qualification-px4-v1.16.0-final
+  --family px4 --image px4-sih:qualify-v1.16.0-ready \
+  --output artifacts/qualification-px4-mounted-ready
 ```
 
 The PX4 suite uses the existing ArduPilot image only as a pymavlink-equipped
@@ -95,8 +98,9 @@ Passed with `sihsim_quadx`, instance 0:
 - SIGTERM exits 143 with `stopped` status, observed below one second.
 - Killing the real `px4` process yields exit 137 and `failed` status.
 
-The managed PX4 status intentionally remains process-only `running`. Automatic
-heartbeat readiness and mission/fence/rally initialization are still absent.
+These earlier PX4 helpers reported process-only `running`. Automatic
+heartbeat readiness and mission/fence/rally initialization were absent in those
+helpers; the newer implementation needs its own image qualification.
 
 ## Newly packaged images and JSON-backed compatibility
 
@@ -131,7 +135,7 @@ These commands pin autopilot source, not every apt/pip/base-image dependency.
 Image IDs identify the actual tested packages; future rebuilds need not be
 bit-identical. Existing PX4 firmware build layers were reused from cache.
 
-Run the installed-image suites:
+Run the installed-image suites (PX4 uses the newer readiness image described below):
 
 ```bash
 python3 docker/qualify-runtime.py --installed \
@@ -139,8 +143,8 @@ python3 docker/qualify-runtime.py --installed \
   --output artifacts/qualification-packaged-c6a991d4
 
 python3 docker/qualify-runtime.py --installed --family px4 \
-  --image px4-sih:qualify-v1.16.0 \
-  --output artifacts/qualification-packaged-px4-v1.16.0
+  --image px4-sih:qualify-v1.16.0-ready \
+  --output artifacts/qualification-packaged-px4-ready
 ```
 
 `--installed` does not override ENTRYPOINT or launch mounted runtime helpers;
@@ -162,8 +166,10 @@ revision changed that parameter interface. No flight/airborne dynamics were test
 
 **PX4 passed:** the installed default entrypoint, live SIH/position data, on-wire
 SYSID 7 override/native SYSID 1, saved parameter resume, fresh archive/reset,
-shutdown and binary-crash behavior. PX4 still has no automatic MAVLink readiness
-or image HEALTHCHECK; its managed status is process-only `running`. Explicit
+shutdown and binary-crash behavior. This earlier image has no automatic MAVLink
+readiness or image HEALTHCHECK; its managed status is process-only `running`.
+Newer PX4 helpers integrate verified readiness and require rebuilding the runtime
+package; these older image IDs do not qualify that capability. Explicit
 `bash` debug-command dispatch also passed for both image families.
 
 Generated reports are in the output directories above; build logs are retained
@@ -217,6 +223,241 @@ The default Compose release tag was not changed. To run this qualified image
 manually, set `ARDUPILOT_SITL_IMAGE=ardupilot-sitl:qualify-c6a991d4` explicitly.
 PX4 host/bridge network deployment is not covered by the ArduPilot Compose result.
 
+## PX4 verified readiness and plan initialization
+
+A newer runtime package was built with cached PX4 v1.16.0 firmware (source
+`6ea3539157ca358c70a515878b77077af7d4611d`), without replacing release tags:
+
+- Image: `px4-sih:qualify-v1.16.0-ready`
+- ID: `sha256:1ef96ee0b8a5a6b96cfe8046f1c168fca5110156dbf133ec62cb3603bdffd49a`
+- Runtime: Python 3.10.12, pymavlink 2.4.50 in an isolated venv, binary wheels only.
+- Installed supervisor, uploader, launch script and startup-hook hashes matched
+  the source tested for that image; later relay changes are qualified below.
+
+Build using the PX4 command above with the new tag, then reproduce qualification:
+
+```bash
+python3 docker/qualify-runtime.py --installed --family px4 \
+  --image px4-sih:qualify-v1.16.0-ready \
+  --output artifacts/qualification-px4-readiness-v1.16.0-documented
+```
+
+The installed entrypoint and Docker HEALTHCHECK passed. The private loopback UDP
+link leaves the native GCS link available; a separate client still receives the
+expected SYSID there. Verified cases:
+
+1. Fresh SYSID 7 startup uploads and independently reads back 5 mission, 4 fence
+   and 1 rally item, including coordinates, frames, commands, parameters and altitudes.
+2. Resume with all plan selections omitted retains all three plans and saved
+   `MPC_XY_VEL_MAX=7.25`.
+3. Resume with explicit empty selections clears all three types, retaining the
+   saved parameter.
+4. Fresh restart archives prior work, restores the parameter default 12, leaves
+   plans empty and uses native SYSID 1. Killing PX4 exits 137 with failed status.
+5. A terrain-frame mission rejected by firmware with MISSION_RESULT 2 exits 1
+   and never becomes ready.
+6. An unused initialization endpoint times out and exits 1, not process-only ready.
+
+Graceful stops exited 143 in under one second. Real SIH lockstep and valid local
+position were also observed, separately from startup readiness. The mission file
+is a protocol fixture, **not a flight-ready PX4 mission**: PX4 stores row 0 as a
+normal item. Legacy coordinate requests quantize to float32; PX4 stores that value
+as double, unlike ArduPilot's additional float32 integer scaling. Readback checks
+permit these specific backend conversions, not arbitrary spatial tolerances.
+
+The report and logs remain under the output directory above. Current mounted
+helpers also passed Copter 4.6.3 direct/MAVProxy/bundle regression in
+`artifacts/qualification-ardupilot-px4-uploader-regression/`. Older installed PX4
+image IDs above remain process-only; they were not retroactively qualified for
+the new readiness contract. No flight or network-fault resilience is implied.
+
+## Localhost-default Compose qualification
+
+The default host publications for both runtimes are localhost-only. The ArduPilot
+Compose file retains its three TCP ports; `compose.px4-sih.yml` adds a bridge-mode
+PX4 UDP endpoint. `SITL_BIND_ADDRESS` explicitly opts into LAN publication, with
+no custom firewall configuration. Container-internal listener addresses are not
+restricted in a way that breaks Docker forwarding.
+
+PX4 was packaged under a new tag without replacing earlier qualification or
+release tags:
+
+- `px4-sih:qualify-v1.16.0-localhost`
+- `sha256:89cdc26666132254089da6ee085bd63c12a2ce2152103d98928b3e288de90589`
+- Installed runtime/uploader/hook/relay hashes match the tested source.
+
+Reproduce with a host pymavlink Python and UDP port 18570 free:
+
+```bash
+python3 docker/qualify-compose.py --family px4 \
+  --image px4-sih:qualify-v1.16.0-localhost \
+  --client-python /usr/bin/python3.10 \
+  --output artifacts/qualification-px4-localhost-compose
+```
+
+The checked-in Compose topology passed installed health and inspected publication
+`127.0.0.1:18570` -> container `18670/udp`. Real host clients observed SYSID 1 and
+set/read `MPC_XY_VEL_MAX=7.25`. A separate reconnected client used UDP source port
+52317 after the first used 50530; both exchanged real vehicle data through the
+relay. Named-volume down/resume retained the parameter; fresh recreation reset it
+to 12 and archived prior work. Killing the relay stopped the managed vehicle with
+exit 1 and failed status, rather than leaving it advertised healthy. Cleanup passed.
+
+ArduPilot's three-service localhost TCP/state/volume suite also passed with the
+new binding override and shared checker, recorded under
+`artifacts/qualification-ardupilot-localhost-compose-regression/`.
+Host-only tests separately exercise bidirectional relay bytes, client reconnection
+and multiple active peers. CI configuration-only checks validate both localhost
+and explicit all-interface publication for both Compose files; actual access from
+another LAN machine is not qualified here. Passive UDP autodiscovery remains
+available through the explicit native PX4 host-network alternative, not bridge mode.
+
+## ArduCopter/JSBSim F450 qualification
+
+An experimental external-physics path passed installed-image qualification with
+unmodified Copter 4.6.3 and JSBSim 1.3.3. The project-owned adapter uses ArduPilot's
+JSON physics protocol, not its fixed-wing JSBSim connector. See
+[ARDUCOPTER_JSBSIM.md](ARDUCOPTER_JSBSIM.md) for build/run instructions and the
+project-owned direct-motor F450 composition.
+
+Qualified image identities:
+
+- Autopilot: `ardupilot-sitl:qualify-4.6.3-jsbsim`,
+  `sha256:0b251c960ee24579f3224283da7071f923a89f431af824e534ec9cab39a1e171`.
+- Simulator: `jsbsim:qualify-1.3.3-f450`,
+  `sha256:ccfc58346fb03512657b26eb259830c2530c9c262361e91774bd15fbd9558d72`.
+- Original Copter release tag was not replaced. Simulator dependencies include
+  Python 3.12, JSBSim 1.3.3 and NumPy 2.2.6. Package license notices remain installed;
+  generated model/config hashes are retained in each simulator run manifest.
+
+Successful evidence:
+
+- `artifacts/qualification-jsbsim-f450-800hz/report.json`: installed helper hashes,
+  inspected localhost TCP publication, initialized physics-aware readiness and
+  normal-EKF guided flight without force-arm or disabled arming checks.
+- Takeoff target 5 m; 81 samples during the 10-second hover window reported
+  altitude 4.986–5.001 m, maximum horizontal displacement from the hover-window
+  origin 0.0143 m and maximum absolute roll/pitch 0.00435 rad. These are autopilot
+  telemetry measurements, not real-aircraft accuracy claims. Independent JSBSim
+  truth confirmed takeoff above 4 m and monotonically advancing simulation time.
+- Commanded yaw to 90 degrees, landing and automatic disarm passed. Reported
+  landed relative altitude was -0.027 m. Declared acceptance limits were altitude
+  3–7 m, hover displacement under 4 m, absolute roll/pitch below 0.45 rad, at
+  least 20 hover samples, yaw within 15 degrees and landed altitude below 0.5 m.
+- Killing JSBSim invalidated autopilot readiness and stopped the autopilot with
+  failed status/exit 1. `artifacts/qualification-jsbsim-f450-autopilot-loss/`
+  independently passed the reverse direction: killing ArduCopter caused the
+  adapter's actuator-progress deadline to fail and exit 1. This second project
+  ran concurrently on a separate Docker network and host port 5960.
+- `artifacts/jsbsim-model-800hz-check.json`: real-model stationary specific force,
+  tilted free-fall/attitude, four individual rotor moment signs and collective
+  climb checks. Host protocol/configuration regressions pass without JSBSim.
+- `artifacts/qualification-jsbsim-f450-repeat/`: a second fresh installed flight
+  passed on the same image digests, including physics-death shutdown. Its 77 hover
+  samples also stayed at 4.986–5.001 m, with maximum hover-window displacement
+  0.0143 m. Two successful runs do not establish deterministic outcomes.
+- `artifacts/qualification-jsbsim-final-internal-regression/`: installed internal
+  physics regression passed on the final qualified autopilot image. This is not
+  an internal-versus-JSBSim flight comparison. All qualification projects cleaned
+  up their containers and volumes.
+
+Reproduce into new empty directories:
+
+```bash
+python3 docker/qualify-jsbsim.py --output artifacts/jsbsim-flight-new
+python3 docker/qualify-jsbsim.py --skip-flight --fault sitl --port 5960 \
+  --output artifacts/jsbsim-autopilot-loss-new
+```
+
+Qualification exposed and fixed three integration assumptions: the older base
+image needed updated shell entrypoints and an owned named-volume mount directory;
+firmware's advertised actuator rate converges during boot rather than matching
+`SIM_RATE_HZ` immediately; and a 400 Hz gyro exchange fails Copter's normal arming
+rate check. The adapter now exchanges at 800 Hz with two 1600 Hz physics substeps,
+keeping the 400 Hz controller and arming checks intact.
+
+Scope remains one F450 model, flat ground start, instance 0 per isolated project,
+fresh state and speed 1. Opposite startup order/DNS delay, transport-loss recovery,
+custom model/parameter changes, directional flight manoeuvres, airborne starts,
+checkpoint restore, cross-host physics and real-aircraft fidelity are unqualified.
+The existing internal backend remains default. JSBSim backend selection is a
+scenario restart, not a live state transfer; arbitrary models are not swappable.
+
+## Read-only JSBSim model catalogs
+
+Catalog-capable images passed installed flight checks for both packaged F450 and
+an independently named, read-only mounted `HeavyQuad` variant:
+
+- `ardupilot-sitl:qualify-4.6.3-jsbsim-models`:
+  `sha256:20b4af6104bcacedc373b1af948778b7e555bfa908a8c61bd85a148039c04529`.
+- `jsbsim:qualify-1.3.3-models`:
+  `sha256:92b8ce8ac6c5786374d27cabcf94aef49435c34ba07a41161e9758470ea0e5b8`.
+- `artifacts/qualification-jsbsim-models-heavy/`: exported native catalog with
+  both F450 and HeavyQuad present; selected HeavyQuad through `JSBSIM_MODEL`.
+  Its mass was changed from 1.4 to 1.8 kg and inertias from
+  0.0190/0.0190/0.0252 to 0.0244/0.0244/0.0324 kg m². JSBSim property inspection
+  confirmed the distinct masses when selecting each name from the same catalog.
+- `artifacts/qualification-jsbsim-models-default/`: no catalog mounted;
+  packaged F450 remained the default. Both flights passed normal arming/EKF,
+  takeoff, hover, yaw, landing, auto-disarm and simulator-death shutdown.
+  Reported hover altitude was 4.987–5.001 m in both runs; this is not a claim of
+  equivalent aircraft dynamics or deterministic results.
+- Installed runtime helper hashes matched source. HeavyQuad's retained manifest
+  identified `/models` as its source; all staged file hashes matched the original
+  catalog after the run. The Compose override declares a read-only bind and
+  disables automatic creation of a missing host directory. Test containers and
+  volumes were cleaned up.
+- 57 host regressions and all lightweight CI commands passed locally, including
+  catalog Compose validation. GitHub execution is a separate check.
+
+Use the catalog/export commands in [ARDUCOPTER_JSBSIM.md](ARDUCOPTER_JSBSIM.md).
+Custom XML is preserved, selected by name and snapshotted per run. Four-engine
+and direct-motor-input checks establish interface compatibility only; arbitrary
+models, motor geometry and tuning are not qualified by these two examples.
+
+## Combined default and optional split deployment
+
+Both current topologies passed installed flight qualification with the same
+adapter/model implementation. These tags leave the earlier qualification images
+unchanged:
+
+- Combined: `ardupilot-sitl:qualify-4.6.3-jsbsim-local`,
+  `sha256:62b437603e47892b5eb57e99d0fbe53e781bfdbe0de5260fe128f31a8d1f3c30`.
+- Split autopilot: `ardupilot-sitl:qualify-4.6.3-jsbsim-split`,
+  `sha256:c78f62e6268226aae7db9c5fc839306ee0f0760c657fa76b4a01a1db49039ec6`.
+- Split simulator: `jsbsim:qualify-1.3.3-split`,
+  `sha256:04944fd39934dbd40b30bf0d7ee33f8c3de56ebe5cbed584810d48abffbaf2e0`.
+
+Evidence under ignored `artifacts/`:
+
+| Report directory | Passed checks |
+| --- | --- |
+| `qualification-jsbsim-local-flight` | Single-container F450 takeoff, hover, yaw, landing/disarm; killing the physics child fails and stops the combined runtime |
+| `qualification-jsbsim-local-heavy-stop` | Read-only HeavyQuad catalog flight; graceful Compose stop records stopped status for supervisor and physics child |
+| `qualification-jsbsim-local-autopilot-loss` | Killing the actual ArduCopter process fails the combined runtime and stops the physics child |
+| `qualification-jsbsim-split-flight` | Optional two-container F450 flight and shutdown following simulator-container failure |
+
+All runs verified installed helper hashes and localhost host publication; the
+flight runs also verified progressing physics truth independently of telemetry.
+All test containers and volumes were removed. The combined image's isolated
+interpreter reported Python 3.12.3, `sys.prefix=/opt/jsbsim-venv`, and JSBSim 1.3.3.
+Real-model tests and model export passed through that interpreter. Explicit
+`--dynamics internal --validate` passed on the combined image; this is preflight,
+not a new full internal-physics flight qualification.
+
+61 host tests pass, including preserving the virtualenv interpreter symlink,
+rejecting conflicting local/external settings before state creation, and archiving
+nested physics truth with autopilot state. Both base topologies and read-only
+catalog overrides pass Compose configuration checks. Dockerfile checks passed;
+lightweight CI commands passed locally, not necessarily on GitHub.
+
+`compose.jsbsim.yml` now means combined deployment; use
+`compose.jsbsim-split.yml` for the former split arrangement. Likewise use the
+matching `*-models.yml` override. The live checker defaults to local mode; add
+`--deployment split` for split images and `--fault stop` for graceful shutdown.
+Earlier reports in this document retain their original image/topology scope.
+These checks do not establish arbitrary-model fidelity or cross-host physics.
+
 ## Defects exposed and fixed
 
 1. **ArduPilot speedup argument:** the resolver emitted `1.0`, rejected by
@@ -248,7 +489,7 @@ incorrectly treating successful startup-script return as valid position.
 
 ## Supporting checks
 
-- 38 host-only regression tests pass (`python3 -m unittest discover -s docker -p 'test_*.py'`).
+- 45 host-only regression tests pass (`python3 -m unittest discover -s docker -p 'test_*.py'`).
 - Python compilation, Bash syntax, the POSIX PX4 startup-hook syntax, Compose
   configuration, local Markdown links and `git diff --check` pass.
 - Static `docker buildx build --check` completes for both Dockerfiles. Actual
@@ -265,8 +506,8 @@ incorrectly treating successful startup-script return as valid position.
 - Add fault tests for startup cancellation, stalled firmware and interrupted
   uploads, plus transport-loss/retry cases with real peers. Mocked protocol-loss
   tests are not measurements of real network resilience.
-- Qualify PX4 bridge/host networking and implement its explicit initialization
-  readiness separately. External dynamics require the experiments in
+- Extend beyond the qualified PX4 localhost bridge client to real LAN peers,
+  other platforms and offboard tools. External dynamics require the experiments in
   [RUNTIME_PROFILES.md](RUNTIME_PROFILES.md).
 
 See [FUTURE_WORK.md](FUTURE_WORK.md) for the actionable backlog. Do not generalize

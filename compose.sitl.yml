@@ -20,7 +20,7 @@ services:
       NO_MAVPROXY: 1
       SITL_RUN_DIR: /home/ardupilot/runs
     ports:
-      - "127.0.0.1:5760:5760/tcp"
+      - "${SITL_BIND_ADDRESS:-127.0.0.1}:5760:5760/tcp"
     volumes:
       - sitl-0-runs:/home/ardupilot/runs
 
@@ -32,7 +32,7 @@ services:
       NO_MAVPROXY: 1
       SITL_RUN_DIR: /home/ardupilot/runs
     ports:
-      - "127.0.0.1:5770:5770/tcp"
+      - "${SITL_BIND_ADDRESS:-127.0.0.1}:5770:5770/tcp"
     volumes:
       - sitl-1-runs:/home/ardupilot/runs
 
@@ -44,7 +44,7 @@ services:
       NO_MAVPROXY: 1
       SITL_RUN_DIR: /home/ardupilot/runs
     ports:
-      - "127.0.0.1:5780:5780/tcp"
+      - "${SITL_BIND_ADDRESS:-127.0.0.1}:5780:5780/tcp"
     volumes:
       - sitl-2-runs:/home/ardupilot/runs
 

@@ -8,6 +8,7 @@ import importlib.util
 import json
 import math
 import os
+import re
 from pathlib import Path
 import shlex
 import sys
@@ -88,6 +89,7 @@ def parser(env):
     p.add_argument("-I", "--instance", default=env.get("INSTANCE") or "0")
     p.add_argument("--sysid", default=env.get("SYSID") or "1")
     p.add_argument("--model", default=env.get("MODEL") or None)
+    p.add_argument("--dynamics", choices=("internal", "jsbsim"), default=env.get("DYNAMICS_BACKEND") or "internal")
     p.add_argument("--speedup", default=env.get("SPEEDUP") or "1")
     p.add_argument("--custom-location", default=",".join(env.get(k) or v for k, v in zip(("LAT", "LON", "ALT", "DIR"), ("37.1971467", "-80.5780381", "618", "55"))))
     p.add_argument("--use-dir", default=env.get("SITL_RUN_DIR") or None)
@@ -229,6 +231,50 @@ def resolve(argv=None, env=None):
         master = f"tcp:127.0.0.1:{port}"
         if not args.no_mavproxy:
             proxy_args.append(f"--out=tcpin:127.0.0.1:{port}")
+    physics = None
+    if args.dynamics not in ("internal", "jsbsim"):
+        raise ConfigError("DYNAMICS_BACKEND must be internal or jsbsim")
+    if args.dynamics == "jsbsim":
+        if vehicle != "ArduCopter" or frame != "quad" or instance != 0:
+            raise ConfigError("JSBSim currently supports ArduCopter/frame quad/instance 0 only")
+        if args.state != "fresh" or speedup != 1:
+            raise ConfigError("JSBSim requires fresh state and SPEEDUP=1")
+        if args.model or scripts.is_dir() or lua:
+            raise ConfigError("JSBSim owns MODEL and physical initial state; custom MODEL/Lua is unsupported")
+        deployment = env.get("JSBSIM_DEPLOYMENT") or "local"
+        if deployment not in ("local", "external"):
+            raise ConfigError("JSBSIM_DEPLOYMENT must be local or external")
+        local = deployment == "local"
+        if local and (env.get("JSBSIM_HOST") or env.get("JSBSIM_STATUS_FILE")):
+            raise ConfigError("local JSBSim owns its loopback host and status path; remove external overrides")
+        host = "127.0.0.1" if local else env.get("JSBSIM_HOST") or "physics"
+        if not host or any(not (c.isalnum() or c in '.-') for c in host):
+            raise ConfigError("JSBSIM_HOST must be an IPv4 address or DNS hostname")
+        status = (run_dir / "work/physics/status.json" if local else
+                  Path(env.get("JSBSIM_STATUS_FILE") or "/physics/status.json").resolve())
+        if not local and status.is_relative_to(run_dir):
+            raise ConfigError("JSBSIM_STATUS_FILE must be outside the autopilot run root")
+        aircraft = env.get("JSBSIM_MODEL") or "F450"
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", aircraft):
+            raise ConfigError("JSBSIM_MODEL must be a simple aircraft directory name")
+        physics = {"backend": "jsbsim", "model": aircraft, "host": host, "status_file": str(status),
+                   "deployment": deployment}
+        if local:
+            from jsbsim_adapter import validate_selection
+            catalog = Path(env["JSBSIM_MODEL_DIR"]).resolve() if env.get("JSBSIM_MODEL_DIR") else None
+            if catalog and (catalog.is_relative_to(run_dir) or run_dir.is_relative_to(catalog)):
+                raise ConfigError("JSBSIM_MODEL_DIR and owned run root must be separate")
+            validate_selection(catalog, aircraft)
+            python_path = Path(env.get("JSBSIM_PYTHON") or "/opt/jsbsim-venv/bin/python3")
+            if not python_path.is_absolute():
+                python_path = config_dir / python_path
+            file_path(str(python_path), config_dir, "JSBSIM_PYTHON")
+            # Keep the venv symlink path: resolving it would bypass pyvenv.cfg.
+            python = str(python_path.absolute())
+            if not os.access(python, os.X_OK):
+                raise ConfigError("JSBSIM_PYTHON is not executable")
+            physics.update(python=python, model_dir=str(catalog) if catalog else None)
+        model = "JSON:" + host  # resolved to an IPv4 address immediately before launch
     plan_paths = {k: file_path(env[k], config_dir, k) if env.get(k) else None for k in ("MISSION_FILE", "FENCE_FILE", "RALLY_FILE")}
     for source in [str(config_dir), str(scripts), str(binary), bundle_path, model_file, lua, *params, *plan_paths.values()]:
         if source and Path(source).resolve().is_relative_to(run_dir):
@@ -237,6 +283,7 @@ def resolve(argv=None, env=None):
         "version": 1, "validate": args.validate, "print_effective_config": args.print_effective_config,
         "root": str(root), "config_dir": str(config_dir), "run_dir": str(run_dir), "state": args.state,
         "vehicle": vehicle, "frame": frame, "model": model, "binary": str(binary),
+        "physics": physics,
         "instance": instance, "sysid": sysid, "location": location, "speedup": speedup,
         "params": params, "vehicleinfo_overrides": overrides, "vehicleinfo_path": bundle_path,
         "scripts": str(scripts) if scripts.is_dir() else None, "lua_script": lua,

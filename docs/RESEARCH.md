@@ -141,9 +141,36 @@ Feeds:
 - `docs/DESIGN.md`: durable distinction between `.BIN` and `.tlog` producers.
 
 
+## ArduCopter + JSBSim Quad-X
+
+Native multi-model catalogs are implemented with read-only mounting and name-based
+selection. Packaged F450 and a mounted HeavyQuad variant (1.8 kg with increased
+inertia) passed installed flight/failure checks; custom models remain separately
+qualified. See the model-catalog section of `RUNTIME_QUALIFICATION.md`.
+
+Combined-default and optional split deployment flight checks pass, including local
+physics/autopilot process failures and graceful shutdown. The combined image uses
+an isolated JSBSim virtualenv and archives nested physics state with the vehicle.
+See `RUNTIME_QUALIFICATION.md` for exact topology/image evidence.
+
+Status: experimental adapter, F450 model composition and combined/split images
+implemented; host protocol/configuration, real-model and installed normal-EKF
+hover/yaw/landing checks pass for Copter 4.6.3 + JSBSim 1.3.3. Both process-death
+directions stop the coupled peer. Exact images and remaining limits are recorded
+in [RUNTIME_QUALIFICATION.md](RUNTIME_QUALIFICATION.md#arducopterjsbsim-f450-qualification).
+
+[ARDUCOPTER_JSBSIM.md](ARDUCOPTER_JSBSIM.md) specifies restart-based switching
+between internal dynamics and JSBSim, using unmodified ArduCopter's JSON physics
+interface. Project-owned adapter code stays outside the ArduPilot checkout. The
+note records pinned source evidence for the existing fixed-wing JSBSim connector,
+proposed motor/sensor/time/lifecycle contracts, open decisions and delivery gates.
+[FUTURE_WORK.md](FUTURE_WORK.md) tracks the phased implementation.
+
+
 ## External Physics and Flight-Dynamics Simulators
 
-Status: surveyed; no external backend is bundled or validated with these images
+Status: surveyed; an experimental ArduCopter/JSBSim F450 integration is now
+packaged in combined and split forms. Other catalog entries remain unimplemented/unqualified here.
 
 Detailed note:
 
@@ -166,7 +193,12 @@ used as ArduPilot's standard SITL viewer is not itself the physics backend.
 Status: existing-image checks passed for Copter 4.6.3/PX4 SIH 1.16.0; installed
 image checks also passed for PX4 1.16.0 and pinned JSON-backed Copter 4.8.0-dev
 `c6a991d4aa91e3834af333c0061533aa1009b431`. Three-service ArduPilot Compose health,
-host TCP access and retained-volume fresh/resume checks passed.
+host TCP access and retained-volume fresh/resume checks passed. A newer PX4
+1.16.0 package also passed verified heartbeat/plan readiness, installed health,
+plan retention/clearing and rejected-frame/missing-heartbeat startup failures.
+A separate relay-capable image passed localhost-published PX4 Compose tests with
+real host UDP clients, reconnection, volume recreation and relay-failure detection;
+ArduPilot localhost Compose regression also passed.
 
 [RUNTIME_QUALIFICATION.md](RUNTIME_QUALIFICATION.md) records exact identities,
 reproduction commands, real plan/Lua/state/lifecycle results, compatibility fixes
@@ -176,15 +208,17 @@ The host-only suite and the opt-in Docker live suite are distinct checks.
 
 ## Runtime Profiles and External Dynamics Architecture
 
-Status: research and proposed design captured; no external integration experiments
-or image builds performed for this design work
+Status: broader architecture remains design guidance. The first experimental
+ArduCopter/JSBSim adapter and images now exist; see the dedicated design note for
+its narrower implemented scope and qualification status.
 
 Detailed note: [RUNTIME_PROFILES.md](RUNTIME_PROFILES.md).
 
 - Distinguishes the four autopilot/internal-or-external profiles from image,
   service, adapter and scenario counts.
-- Recommends separate external-dynamics services with native bridge placement,
-  explicit capability contracts and release/model compatibility tuples.
+- Defaults single-vehicle ArduCopter/JSBSim to colocated supervised processes with
+  isolated dependencies, retaining optional split images. Shared-world backends
+  may warrant separate services; capability/version/model contracts remain explicit.
 - Captures clock ownership, readiness, coordinated reset, initial conditions and
   trim, container transport, signal mappings, fidelity/repeatability, rendering
   and asset/licensing questions with upstream sources.
@@ -223,8 +257,9 @@ Key findings:
 - PX4's instance system offsets ports and assigns `MAV_SYS_ID=INSTANCE+1`
   unless explicitly overridden.
 - PX4 applies env vars named `PX4_PARAM_<PARAM_NAME>` during POSIX startup.
-- PX4 SIH is UDP-oriented; host networking is the clearest v1 container
-  workflow.
+- PX4 SIH is UDP-oriented; the default Compose workflow uses bridge networking
+  with localhost publication and the supervised GCS relay. Native host networking
+  remains an explicit alternative for UDP autodiscovery.
 
 Implemented recommendations:
 

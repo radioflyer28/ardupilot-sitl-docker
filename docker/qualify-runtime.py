@@ -26,7 +26,8 @@ os.environ["MAVLINK20"] = "1"
 from pymavlink import mavutil
 mode, instance, sysid = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 port = 5760 + instance * 10 if mode == "direct" else 21000 + instance
-m = mavutil.mavlink_connection(f"tcp:127.0.0.1:{port}", source_system=254, source_component=191)
+endpoint = f"udpin:127.0.0.1:{31000 + instance}" if mode == "px4" else f"tcp:127.0.0.1:{port}"
+m = mavutil.mavlink_connection(endpoint, source_system=254, source_component=191)
 # Behave as an active GCS: tcpin routers may not service a silent subscriber
 # until it sends traffic. Keep this handshake bounded rather than retrying tests.
 h = None
@@ -38,6 +39,8 @@ while time.monotonic() < deadline:
         h = candidate
         break
 assert h, "expected autopilot heartbeat was not received"
+if mode == "px4":
+    assert h.autopilot == mavutil.mavlink.MAV_AUTOPILOT_PX4, h
 m.target_system, m.target_component = sysid, 1
 operation = sys.argv[4]
 result = {"sysid": h.get_srcSystem()}
@@ -48,7 +51,7 @@ def receive(kind, condition=lambda msg: True):
         if msg and msg.get_srcSystem() == sysid and condition(msg):
             return msg
     raise AssertionError(f"missing {kind}")
-if operation == "plans":
+if operation in ("plans", "plans-empty"):
     examples = Path("/qualification/configs/examples")
     # Independent fixture expectations: do not reuse the uploader's parser/encoder.
     mission = []
@@ -62,17 +65,18 @@ if operation == "plans":
               [float(len(points)), 0., 0., 0.], p["lat"], p["lon"], 0.) for p in points]
     rally = [(6, mavutil.mavlink.MAV_CMD_NAV_RALLY_POINT, [0., 0., 0., 0.],
               p["lat"], p["lon"], p["alt"]) for p in json.loads((examples / "plan-artifacts/rally/recovery-points.json").read_text())["points"]]
-    expected = {0: mission, 1: fence, 2: rally}
+    expected = {0: mission, 1: fence, 2: rally} if operation == "plans" else {0: [], 1: [], 2: []}
     result["counts"] = {}
     canonical_frame = lambda value: {0: 5, 3: 6, 10: 11}.get(value, value)
     def float32(value):
         return struct.unpack("<f", struct.pack("<f", value))[0]
     def coordinate_matches(actual, coordinate):
         integer_value = round(coordinate * 1e7)
-        # Legacy MISSION_REQUEST requires float coordinates. ArduPilot scales
-        # those in float32 before storing int32. Permit exactly that conversion,
-        # or the native integer path, plus one integer unit of quantization.
-        legacy_value = int(float32(float32(coordinate) * 1e7))
+        # Legacy MISSION_REQUEST requires float32 coordinates. PX4 stores that
+        # value as double; ArduPilot also scales it in float32 to store int32.
+        # Permit the corresponding conversion or the native integer path.
+        legacy_value = (round(float32(coordinate) * 1e7) if mode == "px4"
+                        else int(float32(float32(coordinate) * 1e7)))
         return min(abs(actual - integer_value), abs(actual - legacy_value)) <= 1
     for plan_type, items in expected.items():
         m.mav.mission_request_list_send(sysid, 1, plan_type)
@@ -85,7 +89,7 @@ if operation == "plans":
             assert item.command == command, (plan_type, seq, item)
             assert canonical_frame(item.frame) == canonical_frame(frame), (plan_type, seq, item.frame, frame)
             assert all(abs(a - b) < 1e-5 for a, b in zip((item.param1, item.param2, item.param3, item.param4), params)), (plan_type, seq, item)
-            if plan_type == 0 and seq == 0:
+            if mode != "px4" and plan_type == 0 and seq == 0:
                 # Item 0 is synthesized from current home, not stored from upload.
                 # Home can still be unset: managed readiness does not promise GPS.
                 result["home_readback"] = {"lat_int": item.x, "lon_int": item.y, "alt": item.z}
@@ -274,16 +278,30 @@ def ardupilot(image, output, installed=False):
 
 def px4(image, client_image, output, installed=False):
     results = []
-    env = {"PX4_RUN_DIR": "/results/run", "INSTANCE": "0", "SYSID": "7"}
+    base_env = {"PX4_RUN_DIR": "/results/run", "INSTANCE": "0", "SYSID": "7",
+                "SITL_CONFIG_DIR": "/qualification/configs/examples"}
+    selected = {"MISSION_FILE": "mission/missions/simple-copter.waypoints",
+                "FENCE_FILE": "plan-artifacts/fences/simple-polygon.json",
+                "RALLY_FILE": "plan-artifacts/rally/recovery-points.json"}
+    # Explicit empty selections must clear; omission on resume must retain plans.
+    empty = {}
+    for label, text, suffix in (("MISSION", "QGC WPL 110\n", "waypoints"),
+                                ("FENCE", '{"fences":[]}\n', "json"),
+                                ("RALLY", '{"points":[]}\n', "json")):
+        path = output / f"empty-{label.lower()}.{suffix}"
+        path.write_text(text)
+        empty[label + "_FILE"] = "/results/" + path.name
+    stages = (("fresh", selected, "plans"), ("resume", {}, "plans"),
+              ("resume", empty, "plans-empty"), ("fresh", {}, "plans-empty"))
     def native(container, module, *args):
         return container.exec("bash", "-c", '"$PX4_ROOT/build/$PX4_BUILD_DIR/bin/px4-' + module + '" --instance 0 "$@"', "qualify", *args).stdout
-    for state in ("fresh", "resume", "fresh"):
-        env["SITL_STATE"] = state
-        if len(results) == 2:
+    for state, files, operation in stages:
+        env = {**base_env, **files, "SITL_STATE": state}
+        if len(results) == 3:
             env["SYSID"] = ""
         container = Container(image, output, env, None if installed else "/qualification/docker/run-px4-sih.sh")
         try:
-            container.wait_state("running")
+            container.wait_state("ready")
             wait_for(lambda: "Startup script returned successfully" in Path(container.log.name).read_text(), "PX4 startup complete")
             # Native uORB and simulator checks prove more than process liveness.
             wait_for(lambda: "xy_valid: True" in native(container, "listener", "vehicle_local_position", "-n", "1"),
@@ -297,6 +315,7 @@ def px4(image, client_image, output, installed=False):
                            'h=m.wait_heartbeat(timeout=10); assert h; print(h.get_srcSystem()); '
                            f'assert h.get_srcSystem()=={sysid}').stdout.strip()
             assert int(beat) == sysid
+            plans = container.client("px4", 0, sysid, operation)
             value = native(container, "param", "show", "-q", "MPC_XY_VEL_MAX").strip()
             assert abs(float(value) - (7.25 if state == "resume" else 12)) < 0.001, value
             version = native(container, "ver", "all")
@@ -305,8 +324,8 @@ def px4(image, client_image, output, installed=False):
                 native(container, "param", "set", "MPC_XY_VEL_MAX", "7.25")
                 native(container, "param", "save")
             record = {"state": state, "sysid": sysid, "MPC_XY_VEL_MAX": float(value), "lockstep": True, "position_valid": True,
-                      "version": version}
-            if len(results) == 2:
+                      "version": version, "plans": plans, "managed_ready": True}
+            if len(results) == 3:
                 container.exec("pkill", "-KILL", "-x", "px4")
                 code = container.process.wait(timeout=20)
                 assert code == 137, code
@@ -315,6 +334,26 @@ def px4(image, client_image, output, installed=False):
                 record["crash_exit"] = code
             else:
                 record["graceful_stop"] = container.stop()
+            results.append(record)
+            print("PASS", json.dumps(record), flush=True)
+        finally:
+            container.close()
+    # Real firmware rejection and missing telemetry must fail startup, not turn
+    # process liveness into a false healthy result.
+    unsupported = output / "unsupported.waypoints"
+    unsupported.write_text("QGC WPL 110\n0 0 10 16 0 0 0 0 37.197147 -80.578038 20 1\n")
+    for label, overrides, expected_error in (
+        ("rejected-frame", {"MISSION_FILE": "/results/unsupported.waypoints"}, "MAV_MISSION_RESULT=2"),
+        ("missing-heartbeat", {"PLAN_UPLOAD_MASTER": "udpin:127.0.0.1:31999", "PLAN_UPLOAD_TIMEOUT": "2"}, "timed out"),
+    ):
+        env = {**base_env, "SITL_STATE": "resume", **overrides}
+        container = Container(image, output, env, None if installed else "/qualification/docker/run-px4-sih.sh")
+        try:
+            code = container.process.wait(timeout=25)
+            assert code == 1, (label, code)
+            assert json_file(output / "run/status.json")["state"] == "failed"
+            assert expected_error in Path(container.log.name).read_text(), container.log.name
+            record = {"case": label, "exit_code": code, "failed_not_ready": True}
             results.append(record)
             print("PASS", json.dumps(record), flush=True)
         finally:

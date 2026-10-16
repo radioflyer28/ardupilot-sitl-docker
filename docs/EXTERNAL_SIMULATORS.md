@@ -37,6 +37,12 @@ Additional options:
 
 ## Choosing an integration
 
+The first experimental pairing is ArduCopter + JSBSim F450 through a project-owned
+JSON-physics adapter, not the native fixed-wing-oriented JSBSim connector. It has
+combined and optional separate simulator packaging; see [ARDUCOPTER_JSBSIM.md](ARDUCOPTER_JSBSIM.md) for
+usage and exact qualification status. Catalog support does not establish that
+an arbitrary aircraft/release combination works.
+
 - For a shared external-simulator *platform*, start by evaluating modern
   Gazebo: both autopilots document integrations, but each needs its own bridge,
   vehicle configuration, and actuator/sensor mappings.
@@ -46,8 +52,8 @@ Additional options:
   generic JSON/UDP interface, PX4's simulator MAVLink API, and PX4's Gazebo
   bridge are distinct. PX4 SIH instead runs internally over uORB; it is **not**
   an external backend.
-- These Docker images package prebuilt ArduPilot SITL and PX4 SIH runtimes, not
-  the external simulator stacks. The PX4 SIH build intentionally skips their
+- The primary Docker images package prebuilt ArduPilot SITL and PX4 SIH runtimes.
+  JSBSim supports combined and split images; other external stacks are not packaged. The PX4 SIH build intentionally skips their
   dependencies (see [PX4 SIH runtime](PX4_SIH.md)). Running an external backend
   requires the appropriate simulator, integration/build path, connectivity,
   and matched model configuration; it is not enabled by selecting a different

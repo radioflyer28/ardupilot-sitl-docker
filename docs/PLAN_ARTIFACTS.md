@@ -120,7 +120,10 @@ For future manifests:
 - Keep instance, system ID, image, home, model, outputs and endpoint allocation
   explicit and service-local.
 
-Open work includes importing common ground-station plan formats, PX4-native
-initialization/readiness integration, and real transport tests against pinned
-ArduPilot versions. Host-only regression tests validate the protocol state
-machine but are not live autopilot qualification.
+PX4 now integrates the shared uploader through a dedicated native loopback UDP
+link and expected-family heartbeat check. Plan command/frame semantics remain
+firmware-specific; row 0 is a stored mission item on PX4, not synthesized home.
+
+Open work includes importing common ground-station plan formats and expanding
+release/transport qualification. Host-only regression tests validate the protocol
+state machine but are not live autopilot qualification.

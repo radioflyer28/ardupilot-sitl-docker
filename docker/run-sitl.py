@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -60,7 +61,48 @@ def child_status(root):
     return bool(records)
 
 
+def physics_ready(config, started):
+    """Require fresh advancing-physics reports, not merely a simulator process."""
+    physics = config.get("physics")
+    if not physics:
+        return True
+    try:
+        status = json.loads(Path(physics["status_file"]).read_text())
+    except FileNotFoundError:
+        return False
+    updated = status.get("updated", 0)
+    if updated < started:
+        return False  # previous run's status must not establish readiness
+    if status.get("state") in ("failed", "stopped"):
+        raise RuntimeError(f"JSBSim stopped: {status.get('error', status['state'])}")
+    if not 0 <= time.time() - updated < 3:
+        return False
+    if status.get("state") != "ready" or status.get("frames", 0) < 2:
+        return False
+    if status.get("backend") != "jsbsim" or status.get("model") != physics["model"]:
+        raise RuntimeError("unexpected physics backend/model")
+    if status.get("location") != config["location"]:
+        raise RuntimeError("autopilot and JSBSim initial locations differ")
+    return status.get("simulation_time", 0) > 0
+
+
+def local_physics_command(config):
+    physics = config.get("physics")
+    if not physics or physics["deployment"] != "local":
+        return None
+    command = [physics["python"], str(HELPERS / "jsbsim_adapter.py"),
+               "--run-dir", str(Path(physics["status_file"]).parent),
+               "--listen", "127.0.0.1", "--model", physics["model"],
+               "--start-timeout", str(config["timeout"]),
+               "--location", *map(str, config["location"])]
+    if physics["model_dir"]:
+        command.extend(["--model-dir", physics["model_dir"]])
+    return command
+
+
 def run(config):
+    if config.get("physics"):
+        config["model"] = "JSON:" + socket.gethostbyname(config["physics"]["host"])
     enable_subreaper()
     processes = []
     requested_signal = 0
@@ -76,6 +118,16 @@ def run(config):
                 directory.status("preparing")
                 atomic_json(config["health_file"], {"run_dir": str(directory.root)})
                 stage_scripts(config, directory.work)
+                if config.get("physics"):
+                    # The physical model requires this fixed motor/output contract.
+                    # Append last so a user parameter layer cannot silently remap it.
+                    parameters = directory.root / "tmp/jsbsim.parm"
+                    parameters.write_text("FRAME_CLASS 1\nFRAME_TYPE 1\nSIM_RATE_HZ 800\n"
+                                          "SERVO1_FUNCTION 33\nSERVO2_FUNCTION 34\n"
+                                          "SERVO3_FUNCTION 35\nSERVO4_FUNCTION 36\n"
+                                          "MOT_PWM_MIN 1000\nMOT_PWM_MAX 2000\n"
+                                          "AHRS_EKF_TYPE 3\nEK3_ENABLE 1\n")
+                    config["params"] = [*config["params"], str(parameters)]
                 effective = directory.root / "effective-config.json"
                 atomic_json(effective, config)
                 env = dict(os.environ, SITL_RITW_TERMINAL=str(HELPERS / "sitl-terminal.py"),
@@ -84,6 +136,12 @@ def run(config):
                 env.pop("SIM_VEHICLE_SESSION", None)
                 command = [sys.executable, str(HELPERS / "launch-sitl.py"), str(effective), *sim_arguments(config, directory.work)]
                 directory.status("starting")
+                started = time.time()
+                physics_child = None
+                physics_command = local_physics_command(config)
+                if physics_command:
+                    physics_child = subprocess.Popen(physics_command, env=env, start_new_session=True)
+                    processes.append(physics_child)
                 launcher = subprocess.Popen(command, cwd=config["root"], env=env, start_new_session=True)
                 processes.append(launcher)
                 upload_command = [sys.executable, str(HELPERS / "upload-plan-artifacts.py"),
@@ -97,13 +155,18 @@ def run(config):
                 ready = False
                 deadline = time.monotonic() + config["timeout"]
                 while not requested_signal:
+                    if physics_child is not None and physics_child.poll() is not None:
+                        raise RuntimeError(f"local JSBSim exited with status {physics_child.returncode}")
                     if launcher.poll() is not None:
                         raise RuntimeError(f"sim_vehicle exited with status {launcher.returncode}")
                     vehicle_running = child_status(directory.root)
                     result = initializer.poll()
                     if result is not None and result != 0:
                         raise RuntimeError(f"vehicle initialization failed with status {result}")
-                    if not ready and result == 0 and vehicle_running:
+                    physics_ok = physics_ready(config, started)
+                    if ready and not physics_ok:
+                        raise RuntimeError("JSBSim physics progress stopped")
+                    if not ready and result == 0 and vehicle_running and physics_ok:
                         ready = True
                         print(f"run-sitl: ready; SYSID={config['sysid']}; run directory={directory.root}", flush=True)
                     if not ready and time.monotonic() > deadline:

@@ -1,0 +1,12 @@
+# Add to compose.jsbsim-split.yml for a read-only host-owned model catalog.
+services:
+  physics:
+    environment:
+      JSBSIM_MODEL_DIR: /models
+    volumes:
+      - type: bind
+        source: ${JSBSIM_MODELS_DIR:?Set JSBSIM_MODELS_DIR to the native catalog directory}
+        target: /models
+        read_only: true
+        bind:
+          create_host_path: false

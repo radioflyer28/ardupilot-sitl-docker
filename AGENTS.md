@@ -122,20 +122,23 @@ Default section order:
 
 ## Verification
 
-Use the narrowest relevant checks:
+Use the narrowest relevant checks. `.github/workflows/checks.yml` runs host-only
+PR checks without firmware/image builds or live containers:
 
 - Dockerfile edits: `docker buildx build --check -f Dockerfile .`
 - Release script edits:
-  `bash -n scripts/build-release-image.sh scripts/build-px4-sih-image.sh`
+  `for script in scripts/*.sh; do bash -n "$script"; done`
 - Python helper edits:
   `python3 -m py_compile scripts/populate-config-bundles.py docker/*.py`
 - Runtime configuration/lifecycle/protocol edits:
   `python3 -m unittest discover -s docker -p 'test_*.py'` and
-  `bash -n docker/*.sh`
+  `for script in docker/*.sh; do bash -n "$script"; done`
 - Config bundle edits:
   `python3 -m json.tool configs/frames/arducopter-quad/vehicleinfo.json` and
   `python3 -m json.tool configs/frames/arduplane-plane/vehicleinfo.json`
-- Compose edits: `docker compose -f compose.sitl.yml config`
+- Compose edits: `docker compose -f compose.sitl.yml config` and
+  `PX4_SIH_IMAGE=px4-sih:config-only docker compose -f compose.px4-sih.yml config`;
+  external physics: `docker compose -f compose.jsbsim.yml config`.
 - Live firmware/image/Compose qualification: use the opt-in commands and exact
   tested-version boundaries in `docs/RUNTIME_QUALIFICATION.md`.
 
@@ -155,17 +158,34 @@ sandboxed environments.
 
 ## User Preferences
 
+- Deployment targets an office workstation and local LAN, never the public
+  Internet. LAN reachability in PX4 host-network mode is intentional; do not
+  impose firewall configuration as a runtime prerequisite for this deployment.
+- Default host-facing Docker publications to localhost for both runtimes; keep
+  LAN access an explicit `SITL_BIND_ADDRESS` opt-in. Preserve container-internal
+  listeners needed for Docker forwarding rather than binding them to loopback.
+- Preserve expected localhost and LAN client connectivity. Do not add security
+  restrictions that break these connections or change bind/publication defaults
+  without an explicit request; explain trade-offs instead of silently locking down.
+- Default single-vehicle ArduCopter/JSBSim to one combined container with an
+  isolated physics Python environment; retain the explicit two-container option.
+  Share adapter/model logic and qualify both deployment lifecycles.
+- Keep custom external-physics adapters in project-owned code outside
+  `./ardupilot`; prefer existing upstream interfaces over an ArduPilot fork.
 - Keep the repo uncluttered. Prefer small checked-in examples plus generators
   for large derived catalogs. RE: scripts/populate-config-bundles.py
 
 
 ## Child DOX Index
 
+- `.github/AGENTS.md`: lightweight GitHub Actions checks and automation constraints.
 - `configs/AGENTS.md`: runtime SITL config bundles and generated catalog rules.
 - `docker/AGENTS.md`: runtime configuration, lifecycle/state, artifact upload
   helpers and regression/live qualification tests.
 - `docs/AGENTS.md`: design, research, backlog, and durable documentation rules.
 - `scripts/AGENTS.md`: build/export and config generation scripts.
 
-Root-owned files include `Dockerfile`, `Dockerfile.px4-sih`, `README.md`,
-`compose.sitl.yml`, `env.list`, `.dockerignore`, and `.gitignore`.
+Root-owned files include `Dockerfile`, `Dockerfile.px4-sih`, `Dockerfile.jsbsim`,
+`compose.jsbsim.yml`, `compose.jsbsim-models.yml`, `compose.jsbsim-split.yml`,
+`compose.jsbsim-split-models.yml`, `README.md`,
+`compose.sitl.yml`, `compose.px4-sih.yml`, `env.list`, `.dockerignore`, and `.gitignore`.

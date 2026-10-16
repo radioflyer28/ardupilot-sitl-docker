@@ -15,12 +15,40 @@ the images, plus host-only regression and opt-in Docker qualification tests.
 - `launch-sitl.py`: process-local upstream VehicleInfo overlay.
 - `sitl-terminal.py`: upstream terminal hook, vehicle output and exit monitoring.
 - `run_state.py`: exclusive owned state directories, atomic status, fresh/resume,
-  Linux subreaping and bounded process-group shutdown; PX4 process wrapper.
+  Linux subreaping and bounded process-group shutdown; PX4 initialization and supervision.
 - `upload-plan-artifacts.py`: full mission/fence/rally parsing and MAVLink upload.
 - `px4-sih-entrypoint.sh`, `run-px4-sih.sh`: native PX4 env mapping and launch.
-- `px4-rc.mavlink`: PATH-sourced startup hook applying explicit SYSID after
-  instance defaults but before native MAVLink links start; no upstream mutation.
-- `test_runtime.py`: host-only standard-library unit and fake-process tests.
+- `px4-rc.mavlink`: PATH-sourced hook applying explicit SYSID before native links
+  and adding a private initialization link; no upstream mutation.
+- `test_runtime.py`, `test_px4_relay.py`, `test_jsbsim.py`: host-only standard-library regression tests.
+- `jsbsim_adapter.py`: project-owned JSON physics adapter for pinned JSBSim quad-X;
+  packaged F450 is default. `JSBSIM_MODEL` selects a name from a read-only native
+  aircraft/engine catalog (`JSBSIM_MODEL_DIR`); copy only the chosen aircraft and
+  shared engines/systems into owned temporary storage, preserving custom XML.
+  Export a starter catalog with `--export-models`; never overwrite an existing
+  destination. Custom models must consume adapter/motor-0..3 in FR/AL/FL/AR order
+  and contain four engines. Selection support is not flight qualification.
+  Keep direct motor control separate from the bundled pilot controller/sensors.
+  Copies model assets only into its owned temporary run tree; installed/upstream
+  files stay unchanged. `qualify-jsbsim-model.py` checks real model force/sensor
+  behavior separately from protocol tests. `qualify-jsbsim.py` owns opt-in installed
+  helper/readiness/flight/physics-failure checks and isolated Compose cleanup.
+- Managed JSBSim runs require fresh ArduCopter quad/instance 0 at speed 1.
+  Local mode is the default: the autopilot supervisor owns a loopback adapter
+  process using JSBSIM_PYTHON, with physics state under work/physics so fresh runs
+  archive both sides together. Both processes share bounded shutdown; adapter exit
+  fails readiness immediately. External mode retains a separate status mount and
+  independently packaged simulator; only that mode accepts host/status overrides.
+  The combined image isolates JSBSim dependencies in /opt/jsbsim-venv; base
+  autopilot/internal physics does not require those dependencies.
+  The final generated parameter layer fixes
+  quad-X motor functions, PWM range, 800 Hz physics exchange and the normal EKF.
+  Readiness includes fresh matching physics progress; stale/failed physics stops
+  the autopilot. The adapter times out after loss of actuator progress.
+  Backend/model switches require restarting both sides; resume/Lua pose injection
+  are unsupported. Internal dynamics remain unchanged.
+- `px4-gcs-relay.py`: optional supervised UDP bridge preserving a fixed PX4 peer
+  while supporting host-client reconnection and multiple heartbeat-active clients.
 - `qualify-runtime.py`, `qualification-ready.lua`: opt-in mounted-helper or
   installed-image live firmware qualification and Lua execution witness.
 - `qualify-compose.py`, `compose.qualification.yml`: isolated-project Compose
@@ -61,8 +89,17 @@ the images, plus host-only regression and opt-in Docker qualification tests.
   Direct TCP is a startup single-client handoff; private MAVProxy initialization
   ports are 20000 + INSTANCE, separate from SITL serial ports.
 - PX4 keeps native MODEL, INSTANCE, home, speedup and optional SYSID mappings.
-  Share fresh/resume state and process shutdown, but report running rather than
-  MAVLink-ready until native PX4 initialization is implemented.
+  Its private UDP link targets loopback, using local 30000 + INSTANCE and peer 31000 + INSTANCE;
+  native GCS/offboard links remain separate. PX4's listener still binds all
+  interfaces; this is accepted for the intended office/LAN deployment, not a
+  firewall prerequisite. Keep bridge initialization ports unpublished by default.
+  The optional GCS relay uses native peer 14550 and container listener 18670 + INSTANCE;
+  Compose publishes it on host localhost:18570 by default. Relay failure fails the
+  managed run; its sockets must be bound before readiness. Keep host-network mode
+  available without the relay. Preflight selected plans before claiming state. Require an initialized PX4 heartbeat from expected SYSID/component
+  and accepted selected plans before ready; initialization failure or binary exit
+  fails the run. Health checks are side-effect-free supervisor freshness checks,
+  not continuous telemetry, GPS, arming or flight-feasibility checks.
 
 ## Work Guidance
 
@@ -75,7 +112,7 @@ the images, plus host-only regression and opt-in Docker qualification tests.
 
 - `python3 -m unittest discover -s docker -p 'test_*.py'`
 - `python3 -m py_compile docker/*.py`
-- `bash -n docker/*.sh` and `sh -n docker/px4-rc.mavlink`
+- `for script in docker/*.sh; do bash -n "$script"; done` and `sh -n docker/px4-rc.mavlink`
 - `python3 docker/upload-plan-artifacts.py --dry-run --config-dir configs/examples/mission --mission missions/simple-copter.waypoints`
 - `python3 docker/upload-plan-artifacts.py --dry-run --config-dir configs/examples/plan-artifacts --fence fences/simple-polygon.json --rally rally/recovery-points.json`
 - Live pinned-release SITL/direct/MAVProxy checks are additional qualification,

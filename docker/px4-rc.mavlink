@@ -4,4 +4,8 @@
 if [ -n "${PX4_PARAM_MAV_SYS_ID:-}" ]; then
     param set MAV_SYS_ID "$PX4_PARAM_MAV_SYS_ID" || return 1
 fi
-. "${PX4_RUNTIME_ETC}/init.d-posix/px4-rc.mavlink"
+. "${PX4_RUNTIME_ETC}/init.d-posix/px4-rc.mavlink" || return 1
+# Keep managed initialization separate from native GCS/offboard consumers.
+# No forwarding, broadcast or FTP; the peer targets loopback, not a bind ACL.
+mavlink start -u "$((30000 + px4_instance))" -o "$((31000 + px4_instance))" \
+    -t 127.0.0.1 -m minimal -r 10000 || return 1

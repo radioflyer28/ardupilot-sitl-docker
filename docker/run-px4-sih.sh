@@ -58,7 +58,11 @@ else
     run_dir="/tmp/px4-sih/instance_${instance}"
 fi
 
-exec python3 "$(dirname "$(readlink -f "$0")")/run_state.py" \
+if [ "${1:-}" = "--healthcheck" ]; then
+    exec python3 "${helper_dir}/run_state.py" --root "${run_dir}" --healthcheck
+fi
+
+exec python3 "${helper_dir}/run_state.py" \
     --root "${run_dir}" --state "${SITL_STATE:-fresh}" \
     --stop-timeout "${SITL_STOP_TIMEOUT:-10}" -- \
     "${build_path}/bin/px4" -i "${instance}" -d "${build_path}/etc" "$@"

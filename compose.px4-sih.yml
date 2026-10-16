@@ -1,0 +1,24 @@
+services:
+  px4:
+    image: ${PX4_SIH_IMAGE:?Set PX4_SIH_IMAGE to a relay-capable image built from this checkout}
+    init: true
+    stop_grace_period: 20s
+    environment:
+      INSTANCE: 0
+      SYSID: ${SYSID:-1}
+      MODEL: ${MODEL:-sihsim_quadx}
+      PX4_RUN_DIR: /artifacts/run
+      PX4_GCS_RELAY: 1
+      SITL_STATE: ${SITL_STATE:-fresh}
+      SITL_CONFIG_DIR: /configs
+      MISSION_FILE: ${MISSION_FILE:-}
+      FENCE_FILE: ${FENCE_FILE:-}
+      RALLY_FILE: ${RALLY_FILE:-}
+    ports:
+      - "${SITL_BIND_ADDRESS:-127.0.0.1}:${PX4_GCS_PORT:-18570}:18670/udp"
+    volumes:
+      - px4-runs:/artifacts
+      - ./configs/examples:/configs:ro
+
+volumes:
+  px4-runs:

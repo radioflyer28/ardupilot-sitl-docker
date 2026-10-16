@@ -20,6 +20,10 @@ Owns durable project documentation beyond quick user commands.
   options for ArduPilot and PX4.
 - `RUNTIME_PROFILES.md`: four-profile terminology, proposed external-dynamics
   architecture, capability contracts, research evidence and qualification plan.
+- `ARDUCOPTER_JSBSIM.md`: experimental no-fork quad-X integration/usage, read-only
+  multi-model catalogs and selection, adapter ownership,
+  physics/lifecycle contracts and qualification gates; update for backend selection
+  or implementation findings without presenting proposals as verified behavior.
 - `RUNTIME_QUALIFICATION.md`: tested real-firmware environments, reproduction
   commands, observed results/fixes and unqualified boundaries.
 - Runtime analysis log research currently lives in `RESEARCH.md` and

@@ -2,12 +2,12 @@
 
 ## Status and scope
 
-Design direction and research handoff for future sessions, not an implemented
-external-simulator interface. The repository has ArduPilot SITL and PX4 SIH
-runtime paths; external adapters, simulator images and scenario orchestration
-remain unimplemented and unqualified here. Host-only runtime tests are not live
-firmware/FDM qualification. No image builds or external-runtime experiments were
-performed for this design discussion.
+General design direction, not a universal implemented external-simulator
+interface. The repository has qualified ArduPilot/internal and PX4 SIH paths plus
+an experimental ArduCopter/JSBSim F450 adapter, simulator image and Compose path.
+See [ARDUCOPTER_JSBSIM.md](ARDUCOPTER_JSBSIM.md) for that narrower implementation
+and its qualification status. Host-only tests are not live firmware/FDM or flight
+qualification; other external profiles remain proposed.
 
 Use this note for architecture, terminology, research implications and acceptance
 criteria. [EXTERNAL_SIMULATORS.md](EXTERNAL_SIMULATORS.md) owns the simulator
@@ -21,7 +21,7 @@ The useful top-level matrix is autopilot family × dynamics placement:
 | Profile | Autopilot | Dynamics | Repository status |
 | --- | --- | --- | --- |
 | ArduPilot / internal | ArduPilot SITL | Built-in SITL dynamics | Primary runtime path |
-| ArduPilot / external | ArduPilot SITL configured for a named backend | Separate FDM/simulator plus compatible integration | Proposed; not qualified here |
+| ArduPilot / external | ArduPilot SITL configured for a named backend | Separate FDM/simulator plus compatible integration | Experimental ArduCopter/JSBSim F450; scoped installed flight/failure checks pass |
 | PX4 / internal | PX4 SITL with SIH | Internal SIH physics | Existing sibling runtime path |
 | PX4 / external | PX4 SITL with required simulation modules | Separate FDM/simulator plus compatible integration | Proposed; not qualified here |
 
@@ -64,10 +64,11 @@ GCS / controller -- MAVLink --> autopilot service
                               optional viewer
 ```
 
-Keep one autopilot service per vehicle. Default to a separately built simulator
-image and separately running FDM/world service, coordinated as one scenario.
-Native integration requirements may justify colocated deployment; retain the
-logical ownership boundary even then.
+Keep one autopilot runtime per vehicle. For single-vehicle ArduCopter/JSBSim,
+default to a combined container with separately supervised processes and isolated
+Python dependencies; retain the split-image deployment as an option. Shared-world
+simulators may merit separately built/running FDM services. Dynamics outside the
+autopilot process remain an external backend even inside the same container.
 
 There are three responsibilities, not necessarily three containers:
 
@@ -83,8 +84,8 @@ service. Do not impose an extra network hop or a universal bridge container.
 
 Package dependencies separately from small read-only scenario inputs. Pin a
 compatible tuple of autopilot release, simulator version, bridge/plugin revision
-and vehicle/world assets. Independent simulator images are preferable initially
-to a complicated shared-image hierarchy. Both autopilot and simulator runtimes
+and vehicle/world assets. The JSBSim combined target layers dependencies onto a
+prebuilt autopilot target without rebuilding firmware. Both runtimes
 should start prebuilt executables, not invoke upstream build-and-run targets.
 
 For fleet scenarios:
@@ -269,6 +270,12 @@ larger fleets are later qualification targets. Keep unsupported claims explicit.
 
 ## Starting recommendation and unresolved decisions
 
+The selected first implementation target is ArduCopter + one JSBSim quad-X via
+ArduPilot's JSON physics interface, with a project-owned adapter outside upstream.
+See [ARDUCOPTER_JSBSIM.md](ARDUCOPTER_JSBSIM.md) for the experimental implementation and
+[FUTURE_WORK.md](FUTURE_WORK.md) for delivery gates. This choice does not establish
+model validity or release compatibility. The broader selection guidance remains:
+
 - Evaluate JSBSim first if configurable fixed-wing dynamics is the immediate
   goal; PX4 support is community-supported and release compatibility matters.
 - Evaluate modern Gazebo first if shared worlds, collisions, multi-vehicle
@@ -276,8 +283,8 @@ larger fleets are later qualification targets. Keep unsupported claims explicit.
 - Prove one ArduPilot/backend pairing end-to-end, then add PX4 via its own native
   adapter. Do not build a universal abstraction before measuring the first path.
 
-Before implementation, choose the initial use case, backend, vehicle model and
-pinned versions; decide required fidelity, sensor set, initial-state behavior and
+Before implementation, choose the specific aircraft asset and pinned versions
+for the selected pairing; decide required fidelity, sensor set, initial-state behavior and
 repeatability tolerances. Use experiment results to settle image variants,
 network topology, shared-world failure policy and manifest capabilities.
 

@@ -37,7 +37,7 @@ Owns repository helper scripts for release builds and config bundle generation.
 ## Verification
 
 - Shell syntax:
-  `bash -n scripts/build-release-image.sh scripts/build-px4-sih-image.sh`
+  `for script in scripts/*.sh; do bash -n "$script"; done`
 - Python syntax:
   `python3 -m py_compile scripts/populate-config-bundles.py`
 - Generator smoke test:

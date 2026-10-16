@@ -2,6 +2,7 @@
 
 !Dockerfile
 !Dockerfile.px4-sih
+!Dockerfile.jsbsim
 !README.md
 !env.list
 !.dockerignore

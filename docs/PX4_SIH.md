@@ -149,26 +149,72 @@ image user; archive pruning remains an operator responsibility.
 
 The wrapper monitors the binary, forwards shutdown to its process group, and
 uses `SITL_STOP_TIMEOUT` (default 10 seconds) before killing survivors. Its status
-is `running`, not MAVLink-ready. PX4 heartbeat/plan readiness remains unimplemented;
-do not use ArduPilot's readiness guarantee for this path.
+becomes `ready` only after an initialized PX4 heartbeat from the expected SYSID,
+component 1, and accepted mission/fence/rally uploads. Binary exit or bounded
+initialization failure fails the run and terminates owned processes. The image
+HEALTHCHECK checks fresh supervisor readiness, not continuous MAVLink reception,
+GPS/EKF, arming, or mission feasibility.
+
+`MISSION_FILE`, `FENCE_FILE`, and `RALLY_FILE` use the shared WPL/JSON parser;
+relative paths resolve against `SITL_CONFIG_DIR` (default `/configs`). Validation
+precedes state claiming and firmware launch. Omitted plans are not changed;
+selected empty files clear that type. `PLAN_UPLOAD_TIMEOUT` defaults to 60 seconds
+for the entire heartbeat/upload phase. `PLAN_UPLOAD_MASTER` can override transport,
+not the expected SYSID, component or autopilot family.
+
+PX4 v1.16 supports global/relative-altitude frames and common polygon/circle
+fences and rally points. Firmware rejects unsupported commands/frames (including
+ArduPilot-specific fence commands and terrain frames); rejection fails startup.
+PX4 stores mission row 0 as an actual mission item, unlike ArduPilot's synthesized
+home row. Use PX4-appropriate missions; upload acceptance does not prove safe flight.
 
 
 ## Networking
 
-PX4 SITL is UDP-oriented. The most predictable v1 Docker workflow is host
-networking:
+PX4 SITL is UDP-oriented. `compose.px4-sih.yml` defaults to Docker bridge
+networking, publishing host UDP `127.0.0.1:18570` to the GCS relay's container port
+18670. It requires an explicit `PX4_SIH_IMAGE` built with relay support. Connect
+with an active UDP client such as `mavproxy.py --master=udpout:127.0.0.1:18570`.
+Set `SITL_BIND_ADDRESS` to the host LAN IP (or `0.0.0.0`) to opt into LAN access.
+`PX4_GCS_PORT` changes only the published host port.
+
+PX4's native GCS peer learns a fixed source address. Directly publishing the
+native UDP port can strand replies when a client reconnects from another port.
+The optional `PX4_GCS_RELAY=1` byte relay binds native peer `127.0.0.1:14550`,
+forwards client traffic to native `18570 + INSTANCE`, and listens inside the
+container on `18670 + INSTANCE`. Native replies fan out to up to 64 peers that
+sent traffic in the last 120 seconds; clients should send regular GCS heartbeats.
+No MAVLink fields are rewritten. Relay exit or socket startup failure fails the
+managed run. Internal listeners remain container-reachable for Docker forwarding;
+only Docker's host publication defaults to localhost.
+
+Native host networking remains opt-in and preserves UDP autodiscovery:
 
 ```bash
-docker run -it --rm --network host px4-sih:sihsim-quadx
+docker run -it --rm --network host -e PX4_GCS_RELAY=0 px4-sih:sihsim-quadx
 ```
 
 PX4's docs list common single-instance endpoints such as UDP `14550` for QGC,
 UDP `14540` for offboard tools, UDP `18570` as a local MAVLink endpoint, UDP
 `19410` for SIH visualization, and UDP `8888` for uXRCE-DDS.
 
-Bridge networking may need additional PX4 network configuration, depending on
-which host-side GCS or offboard client is used. Keep host networking as the
-documented v1 path until bridge-mode behavior is validated.
+Managed initialization adds a non-forwarding, non-broadcast UDP link with loopback peer:
+local `30000 + INSTANCE`, peer `31000 + INSTANCE`. The uploader binds the peer via
+`udpin:127.0.0.1:<peer>` and releases it after initialization. GCS/offboard links are
+not consumed by initialization. Coordinate these additional ports for host-networked
+instances; the hook requires a free native MAVLink instance slot. PX4 v1.16 binds
+its native UDP listener to all interfaces even with `-t 127.0.0.1`; that option
+sets the peer, not an inbound ACL. The intended deployment is an office workstation
+and local LAN, never public Internet exposure. Host-mode LAN reachability is
+accepted; additional firewall rules are optional operator policy, not a runtime
+prerequisite. Keep bridge initialization ports unpublished by default. MAVLink
+identity checks are not authentication.
+See the pinned [native UDP initialization](https://github.com/PX4/PX4-Autopilot/blob/v1.16.0/src/modules/mavlink/mavlink_main.cpp)
+(`Mavlink::init_udp`) for the listener/peer distinction.
+
+Bridge-mode clients must explicitly target the published endpoint and send
+heartbeats; passive native UDP autodiscovery requires the host-network alternative.
+Initialization ports are not published in the default Compose topology.
 
 
 ## Design Boundaries
@@ -179,8 +225,8 @@ but the wrapper should not hide meaningful autopilot differences:
 - ArduPilot uses `sim_vehicle.py`; PX4 SIH starts the `px4` binary directly.
 - ArduPilot has `VEHICLE`, `FRAME`, `MODEL`, and `PARAM_FILE`; PX4 SIH uses
   `PX4_SIM_MODEL` and `PX4_PARAM_*`.
-- ArduPilot mission/fence/rally initialization now shares a MAVLink uploader.
-  PX4 needs its own transport/readiness integration before adopting that path.
+- Mission/fence/rally initialization shares a MAVLink uploader, but each runtime
+  owns its transport, native plan semantics and separately qualified capabilities.
 - ArduPilot custom physics config can use model JSON and `vehicleinfo.json`;
   PX4 SIH physics is primarily parameterized through PX4 params and airframes.
 

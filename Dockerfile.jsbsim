@@ -1,0 +1,38 @@
+# syntax=docker/dockerfile:1
+ARG ARDUPILOT_IMAGE=ardupilot-sitl:copter-4.6.3
+FROM python:3.12-slim AS simulator
+RUN pip install --no-cache-dir --only-binary=:all: jsbsim==1.3.3 numpy==2.2.6 \
+    && mkdir /physics && chown 1000:1000 /physics
+COPY docker/jsbsim_adapter.py docker/run_state.py docker/qualify-jsbsim-model.py /opt/sitl/
+ENV JSBSIM_DEBUG=0 PYTHONUNBUFFERED=1
+LABEL org.opencontainers.image.source="https://github.com/JSBSim-Team/jsbsim/tree/v1.3.3"
+USER 1000:1000
+WORKDIR /physics
+ENTRYPOINT ["python3", "/opt/sitl/jsbsim_adapter.py"]
+CMD ["--run-dir", "/physics"]
+
+# Refresh project-owned helpers only; use prebuilt, unchanged firmware.
+FROM ${ARDUPILOT_IMAGE} AS autopilot
+USER root
+RUN install -d -m 0755 -o ardupilot -g ardupilot /home/ardupilot/runs
+USER ardupilot
+COPY --chmod=755 docker/ardupilot-entrypoint.sh /usr/local/bin/ardupilot_entrypoint.sh
+COPY --chmod=755 docker/run-sitl.sh /usr/local/bin/run-sitl.sh
+COPY --chmod=755 docker/run-sitl.py docker/sitl_config.py docker/run_state.py \
+    docker/launch-sitl.py docker/sitl-terminal.py docker/upload-plan-artifacts.py \
+    docker/jsbsim_adapter.py docker/qualify-jsbsim-model.py /usr/local/bin/
+ENV JSBSIM_DEPLOYMENT=external
+
+# Default single-container deployment. Keep physics dependencies out of the
+# autopilot's Python environment; no firmware rebuild is needed.
+FROM autopilot AS combined
+USER root
+RUN apt-get update && apt-get install --no-install-recommends -y python3-venv \
+    && rm -rf /var/lib/apt/lists/* \
+    && /usr/bin/python3 -m venv /opt/jsbsim-venv \
+    && /opt/jsbsim-venv/bin/pip install --no-cache-dir --only-binary=:all: jsbsim==1.3.3 numpy==2.2.6
+USER ardupilot
+ENV DYNAMICS_BACKEND=jsbsim JSBSIM_DEPLOYMENT=local \
+    JSBSIM_PYTHON=/opt/jsbsim-venv/bin/python3 JSBSIM_DEBUG=0 PYTHONUNBUFFERED=1
+HEALTHCHECK --interval=5s --timeout=3s --start-period=65s --retries=3 \
+    CMD ["/usr/local/bin/run-sitl.sh", "--healthcheck"]

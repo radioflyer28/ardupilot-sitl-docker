@@ -10,6 +10,29 @@ by development eras and notable commit ranges rather than semantic versions.
 
 ## Unreleased
 
+- Made single-container ArduCopter/JSBSim the default deployment, with an isolated
+  physics Python environment and common process supervision. Retained explicit
+  split-container Compose and shared read-only model catalogs.
+
+- Added read-only native JSBSim model catalogs with name-based selection and a
+  starter F450 export command. Compatible quad-X variants can change physical
+  XML assets without rebuilding ArduPilot; custom models require qualification.
+
+- Added an experimental no-fork ArduCopter/JSBSim F450 adapter, separate images,
+  Compose topology and physics-aware supervision. Internal dynamics remain default;
+  installed normal-EKF takeoff/hover/yaw/landing and coupled process-failure checks
+  pass for Copter 4.6.3 + JSBSim 1.3.3. Added host protocol/config tests and opt-in
+  real-model/flight qualification commands; real-aircraft fidelity remains unvalidated.
+
+- Defaulted both runtime Compose paths to localhost host publications, with an
+  explicit LAN binding override. Added a supervised PX4 UDP relay for bridge-mode
+  host clients and reconnection; native host networking remains available.
+
+- Added lightweight GitHub PR/push host checks without firmware/image builds or
+  live containers.
+- Added PX4 verified heartbeat readiness, mission/fence/rally initialization on a
+  private UDP link, bounded startup failure handling and installed health checks.
+
 - Hardened qualification reporting so cleanup failures cannot report success,
   and independently checked read-back plan payloads with documented home and
   legacy-coordinate normalization.

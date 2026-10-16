@@ -5,6 +5,8 @@ import argparse
 import ctypes
 import fcntl
 import json
+import importlib.util
+import math
 import os
 from pathlib import Path
 import shutil
@@ -13,6 +15,7 @@ import subprocess
 import sys
 import time
 import uuid
+from types import SimpleNamespace
 
 
 def atomic_json(path, value):
@@ -136,45 +139,117 @@ def stop_groups(processes, timeout):
             time.sleep(0.01)
 
 
+def px4_initializer(args):
+    """Validate selected plans before claiming a run root or starting firmware."""
+    helpers = Path(__file__).resolve().parent
+    spec = importlib.util.spec_from_file_location("px4_plan_upload", helpers / "upload-plan-artifacts.py")
+    uploader = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = uploader
+    spec.loader.exec_module(uploader)
+    instance = int(os.environ.get("INSTANCE") or "0")
+    if not 0 <= instance <= 254:
+        raise ValueError("INSTANCE must be between 0 and 254")
+    sysid = (args.target_system if args.target_system is not None else
+             int(os.environ.get("PX4_PARAM_MAV_SYS_ID") or os.environ.get("SYSID") or instance + 1))
+    if not 1 <= sysid <= 255:
+        raise ValueError("target system must be between 1 and 255")
+    if not math.isfinite(args.timeout) or args.timeout <= 0:
+        raise ValueError("initialization timeout must be finite and positive")
+    config_dir = Path(os.environ.get("SITL_CONFIG_DIR") or "/configs").resolve()
+    plans = uploader.selected_plans(SimpleNamespace(
+        config_dir=config_dir, mission=os.environ.get("MISSION_FILE"),
+        fence=os.environ.get("FENCE_FILE"), rally=os.environ.get("RALLY_FILE")))
+    master = args.master or f"udpin:127.0.0.1:{31000 + instance}"
+    command = [sys.executable, str(helpers / "upload-plan-artifacts.py"),
+               "--master", master, "--target-system", str(sysid), "--target-component", "1",
+               "--autopilot", "px4", "--timeout", str(args.timeout), "--wait-ready",
+               "--config-dir", str(config_dir)]
+    for label, path, _items in plans:
+        command.extend(["--" + label, str(path.resolve())])
+    return command, sysid
+
+
 def main():
-    """PX4 state/process wrapper; running is deliberately not MAVLink-ready."""
+    """Supervise PX4 and advertise readiness only after MAVLink initialization."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True)
     parser.add_argument("--state", choices=("fresh", "resume"), default="fresh")
     parser.add_argument("--stop-timeout", type=float, default=10)
+    parser.add_argument("--timeout", type=float, default=os.environ.get("PLAN_UPLOAD_TIMEOUT") or "60")
+    parser.add_argument("--master", default=os.environ.get("PLAN_UPLOAD_MASTER"))
+    parser.add_argument("--target-system", type=int)
+    parser.add_argument("--healthcheck", action="store_true")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
+    if args.healthcheck:
+        return 0 if healthcheck(args.root) else 1
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
     if not command or not 0 < args.stop_timeout <= 300:
         parser.error("command and stop timeout in (0, 300] required")
     requested = 0
+    result = 1
 
     def stop(signum, _frame):
         nonlocal requested
         requested = signum
 
-    signal.signal(signal.SIGTERM, stop)
-    signal.signal(signal.SIGINT, stop)
-    enable_subreaper()
+    previous = {sig: signal.signal(sig, stop) for sig in (signal.SIGTERM, signal.SIGINT)}
     try:
+        initialize, sysid = px4_initializer(args)
+        relay_enabled = os.environ.get("PX4_GCS_RELAY") or "0"
+        if relay_enabled not in ("0", "1"):
+            raise ValueError("PX4_GCS_RELAY must be 0 or 1")
+        enable_subreaper()
         with RunDirectory(Path(args.root).resolve(), args.state) as directory:
             processes = []
             try:
-                directory.status("starting")
+                directory.status("starting", sysid=sysid)
+                relay = None
+                relay_ready = directory.root / "tmp/gcs-relay.json"
+                if relay_enabled == "1":
+                    instance = int(os.environ.get("INSTANCE") or "0")
+                    relay = subprocess.Popen([
+                        sys.executable, str(Path(__file__).with_name("px4-gcs-relay.py")),
+                        "--listen-port", str(18670 + instance), "--native-port", str(18570 + instance),
+                        "--ready-file", str(relay_ready)], start_new_session=True)
+                    processes.append(relay)
                 child = subprocess.Popen(command, cwd=directory.work, start_new_session=True)
                 processes.append(child)
-                while child.poll() is None and not requested:
-                    directory.status("running")
+                initializer = subprocess.Popen(initialize, start_new_session=True)
+                processes.append(initializer)
+                deadline = time.monotonic() + args.timeout
+                ready = False
+                while not requested:
+                    if child.poll() is not None:
+                        result = child.returncode or 1
+                        raise RuntimeError(f"PX4 exited with status {child.returncode}")
+                    if relay is not None and relay.poll() is not None:
+                        raise RuntimeError(f"PX4 GCS relay exited with status {relay.returncode}")
+                    initialized = initializer.poll()
+                    if initialized is not None and initialized != 0:
+                        raise RuntimeError(f"PX4 initialization failed with status {initialized}")
+                    if not ready and initialized == 0 and (relay is None or relay_ready.is_file()):
+                        ready = True
+                        print(f"run-px4: ready; SYSID={sysid}; run directory={directory.root}", flush=True)
+                    if not ready and time.monotonic() > deadline:
+                        raise RuntimeError("PX4 initialization timed out")
+                    directory.status("ready" if ready else "initializing", sysid=sysid)
                     time.sleep(0.2)
-                result = 128 + requested if requested else child.returncode
                 directory.status("stopping")
+                return 128 + requested
+            except Exception as exc:
+                directory.status("failed", error=str(exc), code=result)
+                raise
             finally:
                 stop_groups(processes, args.stop_timeout)
-            directory.status("stopped" if result in (0, 130, 143) else "failed", code=result)
-            return result if result >= 0 else 128 - result
-    except (ValueError, OSError) as exc:
-        print(f"run-state: {exc}", file=sys.stderr)
-        return 1
+                if requested:
+                    directory.status("stopped")
+    except (ValueError, OSError, RuntimeError, ImportError) as exc:
+        print(f"run-px4: {exc}", file=sys.stderr)
+        return result if result >= 0 else 128 - result
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
 
 
 if __name__ == "__main__":

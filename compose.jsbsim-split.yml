@@ -1,0 +1,51 @@
+# Optional independently packaged autopilot and physics deployment.
+services:
+  physics:
+    image: ${JSBSIM_IMAGE:-jsbsim:qualify-1.3.3-split}
+    init: true
+    stop_grace_period: 10s
+    environment:
+      JSBSIM_MODEL: ${JSBSIM_MODEL:-F450}
+    command: ["--run-dir", "/physics", "--location", "${LAT:-37.1971467}", "${LON:--80.5780381}", "${ALT:-618}", "${DIR:-0}"]
+    volumes:
+      - physics-runs:/physics
+  sitl:
+    image: ${ARDUCOPTER_JSBSIM_IMAGE:-ardupilot-sitl:qualify-4.6.3-jsbsim-split}
+    init: true
+    stop_grace_period: 20s
+    depends_on:
+      physics:
+        condition: service_started
+    environment:
+      VEHICLE: ArduCopter
+      FRAME: quad
+      INSTANCE: 0
+      SYSID: 1
+      DYNAMICS_BACKEND: jsbsim
+      JSBSIM_DEPLOYMENT: external
+      JSBSIM_HOST: physics
+      JSBSIM_MODEL: ${JSBSIM_MODEL:-F450}
+      JSBSIM_STATUS_FILE: /physics/status.json
+      LAT: ${LAT:-37.1971467}
+      LON: ${LON:--80.5780381}
+      ALT: ${ALT:-618}
+      DIR: ${DIR:-0}
+      SPEEDUP: 1
+      SITL_STATE: fresh
+      SITL_RUN_DIR: /home/ardupilot/runs
+      NO_MAVPROXY: 1
+      PLAN_UPLOAD_TIMEOUT: 60
+    ports:
+      - "${SITL_BIND_ADDRESS:-127.0.0.1}:${SITL_PORT:-5760}:5760/tcp"
+    volumes:
+      - autopilot-runs:/home/ardupilot/runs
+      - physics-runs:/physics:ro
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/run-sitl.sh", "--healthcheck"]
+      interval: 3s
+      timeout: 3s
+      start_period: 65s
+      retries: 3
+volumes:
+  physics-runs:
+  autopilot-runs:

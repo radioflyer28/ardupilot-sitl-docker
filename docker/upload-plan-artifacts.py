@@ -387,7 +387,7 @@ def encode_item(master: Any, item: PlanItem, target_system: int, target_componen
                   mav_value(constants, item.mission_type, f"item {item.seq} mission_type"))
 
 
-def connect(master_spec: str, timeout: float, target_system=1, target_component=1) -> tuple[Any, Any]:
+def connect(master_spec: str, timeout: float, target_system=1, target_component=1, expected_autopilot=None) -> tuple[Any, Any]:
     mavutil = load_mavutil()
     deadline = time.monotonic() + timeout
     last_error = None
@@ -406,6 +406,7 @@ def connect(master_spec: str, timeout: float, target_system=1, target_component=
                     continue
                 if (heartbeat.get_srcSystem() == target_system and heartbeat.get_srcComponent() == target_component
                         and heartbeat.autopilot != mavutil.mavlink.MAV_AUTOPILOT_INVALID
+                        and (expected_autopilot is None or heartbeat.autopilot == expected_autopilot)
                         # ArduPilot sends heartbeats before mission storage init.
                         # UNINIT/BOOT/CALIBRATING must not trigger plan upload.
                         and heartbeat.system_status not in (0, 1, 2)):
@@ -474,6 +475,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mission", default=os.environ.get("MISSION_FILE"))
     parser.add_argument("--target-system", type=int, default=os.environ.get("SYSID") or "1")
     parser.add_argument("--target-component", type=int, default=1)
+    parser.add_argument("--autopilot", choices=("ardupilot", "px4"), help="require the expected autopilot family")
     parser.add_argument("--wait-ready", action="store_true", help="verify target heartbeat even with no artifacts")
     parser.add_argument("--fence", default=os.environ.get("FENCE_FILE"))
     parser.add_argument("--rally", default=os.environ.get("RALLY_FILE"))
@@ -524,7 +526,11 @@ def main() -> int:
             raise PlanError("PLAN_UPLOAD_MASTER was not set and no --master was provided")
 
         deadline = time.monotonic() + args.timeout
-        master, heartbeat = connect(args.master, args.timeout, args.target_system, args.target_component)
+        expected_autopilot = None
+        if args.autopilot:
+            constant = "MAV_AUTOPILOT_PX4" if args.autopilot == "px4" else "MAV_AUTOPILOT_ARDUPILOTMEGA"
+            expected_autopilot = mav_value(load_mavutil().mavlink, constant, "autopilot")
+        master, heartbeat = connect(args.master, args.timeout, args.target_system, args.target_component, expected_autopilot)
         try:
             for label, _path, items in plans:
                 upload_items(master, heartbeat, label, items, max(0, deadline - time.monotonic()))
