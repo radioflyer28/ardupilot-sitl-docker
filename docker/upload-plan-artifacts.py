@@ -405,7 +405,10 @@ def connect(master_spec: str, timeout: float, target_system=1, target_component=
                     # Keep a healthy TCP connection open while the vehicle boots.
                     continue
                 if (heartbeat.get_srcSystem() == target_system and heartbeat.get_srcComponent() == target_component
-                        and heartbeat.autopilot != mavutil.mavlink.MAV_AUTOPILOT_INVALID):
+                        and heartbeat.autopilot != mavutil.mavlink.MAV_AUTOPILOT_INVALID
+                        # ArduPilot sends heartbeats before mission storage init.
+                        # UNINIT/BOOT/CALIBRATING must not trigger plan upload.
+                        and heartbeat.system_status not in (0, 1, 2)):
                     keep = True
                     return connection, heartbeat
         except (OSError, ValueError) as exc:

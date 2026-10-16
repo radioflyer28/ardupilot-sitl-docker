@@ -2,14 +2,10 @@
 
 !Dockerfile
 !Dockerfile.px4-sih
-!Dockerfile_new
 !README.md
 !env.list
 !.dockerignore
 !docker/
-!docker/resolve-sitl-config.py
-!docker/install-sitl-lua.sh
-!docker/upload-plan-artifacts.py
-!docker/load-mission.lua
-!docker/px4-sih-entrypoint.sh
-!docker/run-px4-sih.sh
+!docker/*.py
+!docker/*.sh
+!docker/px4-rc.mavlink

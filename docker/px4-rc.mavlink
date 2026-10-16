@@ -1,0 +1,7 @@
+#!/bin/sh
+# rcS sources this PATH hook before opening MAVLink links. PX4 v1.16 rcS
+# overwrites the initial PX4_PARAM_MAV_SYS_ID with INSTANCE+1 earlier in boot.
+if [ -n "${PX4_PARAM_MAV_SYS_ID:-}" ]; then
+    param set MAV_SYS_ID "$PX4_PARAM_MAV_SYS_ID" || return 1
+fi
+. "${PX4_RUNTIME_ETC}/init.d-posix/px4-rc.mavlink"

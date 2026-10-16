@@ -107,7 +107,7 @@ RUN install -d -m 0755 /usr/local/bin /configs /artifacts \
 COPY --from=builder --chown=${USER_NAME}:${USER_NAME} /opt/px4/PX4-Autopilot/build/${PX4_BUILD_DIR} /home/${USER_NAME}/PX4-Autopilot/build/${PX4_BUILD_DIR}
 COPY docker/px4-sih-entrypoint.sh /usr/local/bin/px4-sih-entrypoint.sh
 COPY docker/run-px4-sih.sh /usr/local/bin/run-px4-sih.sh
-COPY docker/run_state.py /usr/local/bin/run_state.py
+COPY docker/run_state.py docker/px4-rc.mavlink /usr/local/bin/
 
 RUN chmod +x /usr/local/bin/px4-sih-entrypoint.sh /usr/local/bin/run-px4-sih.sh \
     && printf '%s\n' \

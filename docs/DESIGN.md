@@ -43,8 +43,10 @@ builder prebuilds selected waf targets and prepares its Python environment;
 only runtime dependencies, the prebuilt tree and helpers reach the runtime.
 PX4 copies a prebuilt target and starts its `px4` binary without invoking make.
 
-Build contracts remain unchanged:
+Build contracts:
 
+- `ARDUPILOT_REF` accepts a tag, branch or exact commit through shallow fetch
+  and detached checkout; raw commit IDs do not trigger a full-history clone.
 - `WAF_TARGET` selects one ArduPilot target; empty selects `WAF_ALL_TARGETS`.
 - `WAF_JOBS` controls build parallelism. BuildKit caches apt, pip, Gradle and
   ccache. Release scripts export zstd archives or publish compressed OCI layers.
@@ -148,7 +150,8 @@ mounts must accommodate the image user. Compose uses per-service named volumes.
 
 ArduPilot defaults to direct TCP (`NO_MAVPROXY=1`). Readiness requires:
 
-- an autopilot heartbeat from configured `SYSID`, component 1;
+- an initialized autopilot heartbeat from configured `SYSID`, component 1,
+  beyond UNINIT/BOOT/CALIBRATING (boot heartbeats can precede mission storage);
 - accepted uploads for every selected plan;
 - a running vehicle and launcher process.
 
@@ -179,6 +182,7 @@ Direct SITL TCP normally has one client. The initializer temporarily owns it;
 external clients must wait for health/readiness. For fan-out, enable MAVProxy or
 use an external router. With in-container MAVProxy, the initializer uses a
 private loopback TCP output at `20000 + INSTANCE`, away from SITL serial ports.
+Managed MAVProxy starts non-interactively so closed container stdin is harmless.
 `PLAN_UPLOAD_MASTER` overrides that endpoint but not the expected identity.
 
 Instance, MAVLink system ID and host port allocation are distinct concepts.
@@ -219,4 +223,7 @@ controls rather than disguise meaningful autopilot differences.
 `docker/test_runtime.py` provides host-only resolution, staging, state, protocol
 and fake-process lifecycle regression tests. These do not substitute for real
 MAVLink/SITL tests against pinned releases. Image builds and live flight/runtime
-qualification remain separate checks; see `FUTURE_WORK.md`.
+qualification remain separate checks. The existing-image real-firmware results
+and uncovered compatibility fixes are recorded in
+[RUNTIME_QUALIFICATION.md](RUNTIME_QUALIFICATION.md); see `FUTURE_WORK.md` for
+remaining release and installed-image coverage.

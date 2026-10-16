@@ -109,7 +109,11 @@ MODEL     -> PX4_SIM_MODEL
 
 `SYSID` intentionally defaults to empty for PX4. When it is unset, PX4's
 instance system assigns `MAV_SYS_ID=INSTANCE+1`. Set `SYSID` only when an
-explicit MAVLink system ID is needed.
+explicit MAVLink system ID is needed. The managed `px4-rc.mavlink` PATH hook
+reapplies it immediately before native MAVLink links start: v1.16 rcS otherwise
+overwrites the initial `PX4_PARAM_MAV_SYS_ID` with `INSTANCE+1`. No upstream file
+is changed. See [live qualification](RUNTIME_QUALIFICATION.md) for on-wire ID and
+fresh/resume results; revalidate this startup hook for other releases.
 
 `DIR` is reserved for cross-autopilot symmetry, but PX4 SIH does not currently
 map it to a heading control in this wrapper.

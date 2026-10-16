@@ -200,7 +200,8 @@ def resolve(argv=None, env=None):
     sysid = integer(args.sysid, "SYSID", 1, 255)
     timeout = finite(env.get("PLAN_UPLOAD_TIMEOUT") or 60, "PLAN_UPLOAD_TIMEOUT", 0.1)
     stop_timeout = finite(env.get("SITL_STOP_TIMEOUT") or 10, "SITL_STOP_TIMEOUT", 0.1, 300)
-    speedup = finite(args.speedup, "SPEEDUP", 0.001)
+    # sim_vehicle's supported release interface uses optparse type='int'.
+    speedup = integer(args.speedup, "SPEEDUP", 1, 1000000)
     if args.no_mavproxy and (args.mavproxy_args or args.aircraft):
         raise ConfigError("PROXY/-m and --aircraft require NO_MAVPROXY=0")
     proxy_args = shlex.split(args.mavproxy_args)
@@ -219,6 +220,9 @@ def resolve(argv=None, env=None):
         if not value or any(c.isspace() or c in "'\"=" for c in value):
             raise ConfigError(f"PROXY: unsupported value for {option}")
         index += 1
+    if not args.no_mavproxy:
+        # Containers commonly have stdin closed. Interactive MAVProxy exits on EOF.
+        proxy_args.append("--non-interactive")
     master = env.get("PLAN_UPLOAD_MASTER")
     if not master:
         port = 5760 + instance * 10 if args.no_mavproxy else 20000 + instance

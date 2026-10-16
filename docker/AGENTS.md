@@ -3,7 +3,7 @@
 ## Purpose
 
 Owns runtime configuration, lifecycle, state and artifact helper code copied into
-the images, plus host-only regression tests.
+the images, plus host-only regression and opt-in Docker qualification tests.
 
 ## Ownership
 
@@ -18,13 +18,22 @@ the images, plus host-only regression tests.
   Linux subreaping and bounded process-group shutdown; PX4 process wrapper.
 - `upload-plan-artifacts.py`: full mission/fence/rally parsing and MAVLink upload.
 - `px4-sih-entrypoint.sh`, `run-px4-sih.sh`: native PX4 env mapping and launch.
+- `px4-rc.mavlink`: PATH-sourced startup hook applying explicit SYSID after
+  instance defaults but before native MAVLink links start; no upstream mutation.
 - `test_runtime.py`: host-only standard-library unit and fake-process tests.
+- `qualify-runtime.py`, `qualification-ready.lua`: opt-in mounted-helper or
+  installed-image live firmware qualification and Lua execution witness.
+- `qualify-compose.py`, `compose.qualification.yml`: isolated-project Compose
+  health, real host-client and named-volume recreation qualification. Generated
+  evidence goes in ignored artifacts/, not git.
 
 ## Local Contracts
 
 - Never mutate upstream ArduPilot source or its installed vehicle metadata.
   Keep upstream compatibility in explicit adapters; do not silently bypass
   unsupported managed options.
+- Emit integer SPEEDUP arguments for the upstream sim_vehicle release parser;
+  reject fractional multipliers during preflight rather than at firmware launch.
 - Resolve CLI scalar overrides before deriving paths or ports. Validate the
   binary, selected files and full plan syntax before any staging/launch.
 - Preserve native inputs: MODEL, mounted vehicleinfo, parameter files and Lua.
@@ -40,10 +49,14 @@ the images, plus host-only regression tests.
   verify target SYSID/component, honor retries and require accepted ACKs within
   one bounded initialization deadline.
 - Keep dry-run parsing independent of pymavlink on the host.
-- ArduPilot readiness means expected heartbeat, selected plans acknowledged and
+- Wait for a target heartbeat beyond UNINIT/BOOT/CALIBRATING before uploads;
+  early ArduPilot heartbeats can precede mission storage initialization.
+- ArduPilot readiness means initialized expected heartbeat, selected plans acknowledged and
   live vehicle/launcher processes. Do not promise arming, EKF or Lua readiness.
 - Monitor actual vehicle exit, not only sim_vehicle. Invalidate readiness on
   failure/stop and terminate/reap all owned process groups with bounded waits.
+- Start managed MAVProxy non-interactively so closed container stdin cannot
+  terminate the runtime before readiness.
 - PLAN_UPLOAD_MASTER changes the endpoint, not the expected vehicle identity.
   Direct TCP is a startup single-client handoff; private MAVProxy initialization
   ports are 20000 + INSTANCE, separate from SITL serial ports.
@@ -62,11 +75,18 @@ the images, plus host-only regression tests.
 
 - `python3 -m unittest discover -s docker -p 'test_*.py'`
 - `python3 -m py_compile docker/*.py`
-- `bash -n docker/*.sh`
+- `bash -n docker/*.sh` and `sh -n docker/px4-rc.mavlink`
 - `python3 docker/upload-plan-artifacts.py --dry-run --config-dir configs/examples/mission --mission missions/simple-copter.waypoints`
 - `python3 docker/upload-plan-artifacts.py --dry-run --config-dir configs/examples/plan-artifacts --fence fences/simple-polygon.json --rally rally/recovery-points.json`
 - Live pinned-release SITL/direct/MAVProxy checks are additional qualification,
-  not replaced by the fake-process/transport suite.
+  not replaced by the fake-process/transport suite. Run `qualify-runtime.py`
+  explicitly (not unittest discovery); see `docs/RUNTIME_QUALIFICATION.md` for
+  prerequisites, commands and tested versions. Mounted-helper qualification is
+  distinct from `--installed` image-entrypoint/health qualification. Compose
+  qualification requires a host pymavlink Python and free published test ports;
+  clean up only the test project's containers/volumes. Cleanup failure must fail
+  qualification and be retained in its report. Verify plan payload values, not
+  only counts, when reading plans back from firmware.
 
 ## Child DOX Index
 

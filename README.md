@@ -426,7 +426,7 @@ LAT             Custom home latitude
 LON             Custom home longitude
 ALT             Custom home altitude in meters
 DIR             Custom home heading in degrees
-SPEEDUP         Simulation speed multiplier. Default: 1
+SPEEDUP         Positive integer simulation speed multiplier. Default: 1
 NO_MAVPROXY     1 selects direct TCP; 0 enables MAVProxy. Default: 1
 PROXY           MAVProxy --out, --logfile, and --streamrate options only
 ```
@@ -456,7 +456,8 @@ and re-upload explicitly selected plans. Retention is manual: archive history
 can grow. Mount a writable run directory to retain it after container removal;
 bind mounts must be writable by the image user (default UID 1000).
 
-Readiness requires the expected autopilot heartbeat, accepted uploads for every
+Readiness requires an initialized expected autopilot heartbeat (past
+UNINIT/BOOT/CALIBRATING), accepted uploads for every
 requested plan, and a live vehicle process. It does **not** mean ready to arm,
 GPS/EKF healthy, or user Lua completed. In direct TCP mode, connect external
 clients only after the container becomes healthy; initialization temporarily
@@ -1030,6 +1031,12 @@ MAVProxy `.tlog`; use an external GCS/logger if you still need a telemetry log.
 
 Development Docs
 ----------------
+
+Mounted-helper, installed-image and Compose qualification commands, firmware
+identities, results and remaining gaps are recorded in
+[docs/RUNTIME_QUALIFICATION.md](docs/RUNTIME_QUALIFICATION.md). The live checkers
+do not build images themselves. Qualified local image tags include a pinned
+Copter 4.8.0-dev revision; it is not presented as a stable JSON-backed release.
 
 Design rationale and trade-offs live in `docs/DESIGN.md`.
 

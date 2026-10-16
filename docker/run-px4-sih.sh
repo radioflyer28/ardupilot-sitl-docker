@@ -40,6 +40,16 @@ if [ -n "${SYSID:-}" ]; then
     export PX4_PARAM_MAV_SYS_ID="${PX4_PARAM_MAV_SYS_ID:-${SYSID}}"
 fi
 
+if [ -n "${PX4_PARAM_MAV_SYS_ID:-}" ]; then
+    if ! [[ "$PX4_PARAM_MAV_SYS_ID" =~ ^[0-9]+$ ]] || [ "$PX4_PARAM_MAV_SYS_ID" -lt 1 ] || [ "$PX4_PARAM_MAV_SYS_ID" -gt 255 ]; then
+        printf 'run-px4-sih.sh: SYSID/PX4_PARAM_MAV_SYS_ID must be between 1 and 255\n' >&2
+        exit 1
+    fi
+fi
+helper_dir="$(dirname "$(readlink -f "$0")")"
+export PX4_RUNTIME_ETC="$(realpath "${build_path}/etc")"
+export PATH="${helper_dir}:${PATH}"
+
 if [ -n "${PX4_RUN_DIR:-}" ]; then
     run_dir="${PX4_RUN_DIR}"
 elif [ -n "${ARTIFACTS_DIR:-}" ]; then

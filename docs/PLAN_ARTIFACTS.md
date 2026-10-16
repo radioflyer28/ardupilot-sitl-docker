@@ -4,7 +4,9 @@
 
 Each container owns one vehicle and one read-only input bundle. The managed
 runner parses every selected artifact before launch, then uploads it after a
-heartbeat from the expected `SYSID` and autopilot component 1. Readiness requires
+initialized heartbeat from the expected `SYSID` and autopilot component 1
+(beyond UNINIT/BOOT/CALIBRATING). Boot heartbeats can precede mission storage
+initialization. Readiness requires
 accepted uploads for all selected plans.
 
 | Setting | Input | MAVLink plan type |

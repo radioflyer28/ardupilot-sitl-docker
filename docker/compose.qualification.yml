@@ -1,0 +1,11 @@
+# Test-only override: production service topology remains compose.sitl.yml.
+services:
+  sitl-0:
+    environment:
+      SITL_STATE: ${QUALIFY_STATE:-fresh}
+  sitl-1:
+    environment:
+      SITL_STATE: ${QUALIFY_STATE:-fresh}
+  sitl-2:
+    environment:
+      SITL_STATE: ${QUALIFY_STATE:-fresh}

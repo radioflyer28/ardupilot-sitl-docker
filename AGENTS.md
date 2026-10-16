@@ -109,6 +109,9 @@ Default section order:
   inputs separate from `work/` and archived `history/`; never clear an unowned
   nonempty directory. Shared fresh/resume semantics must not imply identical
   ArduPilot and PX4 readiness capabilities.
+- Keep Dockerfile COPY sources and `.dockerignore` allowlists aligned when adding
+  runtime helpers; packaging tests must exercise installed entrypoints, not only
+  mounted source helpers.
 - Keep checked-in config bundles small and example-oriented. Use
   `scripts/populate-config-bundles.py` for full generated catalogs.
 - Keep the README user-facing. Put design rationale in `docs/DESIGN.md`,
@@ -133,6 +136,8 @@ Use the narrowest relevant checks:
   `python3 -m json.tool configs/frames/arducopter-quad/vehicleinfo.json` and
   `python3 -m json.tool configs/frames/arduplane-plane/vehicleinfo.json`
 - Compose edits: `docker compose -f compose.sitl.yml config`
+- Live firmware/image/Compose qualification: use the opt-in commands and exact
+  tested-version boundaries in `docs/RUNTIME_QUALIFICATION.md`.
 
 Docker commands require Docker daemon access and may require escalation in
 sandboxed environments.
@@ -158,7 +163,7 @@ sandboxed environments.
 
 - `configs/AGENTS.md`: runtime SITL config bundles and generated catalog rules.
 - `docker/AGENTS.md`: runtime configuration, lifecycle/state, artifact upload
-  helpers and host-only regression tests.
+  helpers and regression/live qualification tests.
 - `docs/AGENTS.md`: design, research, backlog, and durable documentation rules.
 - `scripts/AGENTS.md`: build/export and config generation scripts.
 

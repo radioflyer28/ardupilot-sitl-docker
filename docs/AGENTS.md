@@ -20,6 +20,8 @@ Owns durable project documentation beyond quick user commands.
   options for ArduPilot and PX4.
 - `RUNTIME_PROFILES.md`: four-profile terminology, proposed external-dynamics
   architecture, capability contracts, research evidence and qualification plan.
+- `RUNTIME_QUALIFICATION.md`: tested real-firmware environments, reproduction
+  commands, observed results/fixes and unqualified boundaries.
 - Runtime analysis log research currently lives in `RESEARCH.md` and
   `DESIGN.md` unless it grows into a dedicated note.
 - `FUTURE_WORK.md`: action-oriented backlog and improvement ideas.
@@ -60,6 +62,9 @@ Owns durable project documentation beyond quick user commands.
   image/container count.
 - Update `RESEARCH.md` and `DESIGN.md` when `.BIN`, `.tlog`, or other
   post-run analysis artifact decisions change.
+- Update `RUNTIME_QUALIFICATION.md` when live runtime checks establish new
+  compatibility evidence or expose a defect. Separate mounted-helper results
+  from installed-image qualification and retain exact firmware/image identities.
 - Update `FUTURE_WORK.md` when a future improvement is added, removed, or
   clarified.
 - Update `CHANGELOG.md` when notable user-facing behavior, build/release flow,

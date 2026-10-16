@@ -161,6 +161,19 @@ remains an internal uORB simulator rather than an external backend. FlightGear
 used as ArduPilot's standard SITL viewer is not itself the physics backend.
 
 
+## Live Internal-Dynamics Runtime Qualification
+
+Status: existing-image checks passed for Copter 4.6.3/PX4 SIH 1.16.0; installed
+image checks also passed for PX4 1.16.0 and pinned JSON-backed Copter 4.8.0-dev
+`c6a991d4aa91e3834af333c0061533aa1009b431`. Three-service ArduPilot Compose health,
+host TCP access and retained-volume fresh/resume checks passed.
+
+[RUNTIME_QUALIFICATION.md](RUNTIME_QUALIFICATION.md) records exact identities,
+reproduction commands, real plan/Lua/state/lifecycle results, compatibility fixes
+and remaining boundaries. Generated reports/logs stay in ignored `artifacts/`.
+The host-only suite and the opt-in Docker live suite are distinct checks.
+
+
 ## Runtime Profiles and External Dynamics Architecture
 
 Status: research and proposed design captured; no external integration experiments

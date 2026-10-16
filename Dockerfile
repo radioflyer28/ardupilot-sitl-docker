@@ -80,15 +80,11 @@ RUN set -eux; \
     if [ -n "${ARDUPILOT_CLONE_DEPTH}" ]; then \
         depth_args="--depth ${ARDUPILOT_CLONE_DEPTH}"; \
     fi; \
-    if git clone ${depth_args} --branch "$ref" "${ARDUPILOT_REPO}" ardupilot; then \
-        :; \
-    else \
-        git clone "${ARDUPILOT_REPO}" ardupilot; \
-        cd ardupilot; \
-        git checkout "$ref"; \
-        cd ..; \
-    fi; \
+    git init ardupilot; \
     cd ardupilot; \
+    git remote add origin "${ARDUPILOT_REPO}"; \
+    git fetch ${depth_args} origin "$ref"; \
+    git checkout --detach FETCH_HEAD; \
     git config --global --add safe.directory /home/${USER_NAME}/ardupilot
 
 WORKDIR /home/${USER_NAME}/ardupilot

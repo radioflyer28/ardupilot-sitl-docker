@@ -53,19 +53,26 @@ This file tracks likely improvements. Keep design rationale in
 
 ## ArduPilot Integration
 
-- Qualify the process-local `VehicleInfo` overlay and headless terminal hook
-  against pinned older Python-backed and newer JSON-backed ArduPilot releases.
+- Qualify a stable JSON-backed ArduPilot release when available. The older
+  Python-backed Copter 4.6.3 path and pinned 4.8.0-dev JSON-backed revision passed
+  live checks; this is not a general newer-release compatibility guarantee.
 - Consider upstreaming an explicit metadata-file option to replace the overlay
   adapter when upstream provides a stable equivalent.
 
 
 ## Build And Release
 
-- Add CI validation for Dockerfile syntax, shell scripts, JSON bundles, and the
-  config-bundle generator.
-- Add live SITL smoke tests for direct and MAVProxy modes, heartbeat readiness,
-  mission/fence/rally upload, binary death, SIGTERM, resume, and mounted scripts.
-  The host-only suite covers fake processes/protocol peers, not real firmware.
+- Add lightweight per-PR CI for host regression tests, syntax, JSON bundles and
+  config generation. Keep full firmware/image builds and live Docker suites
+  opt-in, scheduled or release-triggered; reuse published qualification images
+  where appropriate rather than rebuilding firmware on every PR.
+- Extend the opt-in runtime/Compose live suites beyond Copter 4.6.3, pinned
+  4.8.0-dev and PX4 SIH 1.16.0; integrate them with suitable CI. Installed
+  entrypoint/health and ArduPilot Compose/host-port/volume checks now pass for the
+  qualification image IDs in `docs/RUNTIME_QUALIFICATION.md`.
+- Add startup-cancellation, transport-loss and interrupted-upload fault tests.
+- Consider pinning base/package dependencies for more reproducible image builds;
+  current qualification records exact tested image IDs, not hermetic rebuilds.
 - Consider publishing prebuilt images in addition to zstd Docker archives.
 - Document or automate multi-version batch builds.
 

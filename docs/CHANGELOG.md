@@ -10,6 +10,26 @@ by development eras and notable commit ranges rather than semantic versions.
 
 ## Unreleased
 
+- Hardened qualification reporting so cleanup failures cannot report success,
+  and independently checked read-back plan payloads with documented home and
+  legacy-coordinate normalization.
+
+- Built and qualified installed PX4 SIH 1.16.0 and pinned JSON-backed Copter
+  4.8.0-dev (`c6a991d4`) packages; verified default entrypoints, ArduPilot Docker
+  health checks and unchanged upstream metadata. Existing release tags remain
+  untouched.
+- Added opt-in Compose qualification with three real host TCP clients and checks
+  for loopback bindings, distinct named volumes, retained resume and fresh reset.
+- Fixed build-context exclusions for new helpers and added shallow exact-commit
+  fetch/checkout support to the ArduPilot Dockerfile.
+
+- Qualified mounted runtime helpers against existing Copter 4.6.3 and PX4 SIH
+  1.16.0 images without image builds; added an opt-in real-firmware qualification
+  suite and a versioned-results note in `docs/RUNTIME_QUALIFICATION.md`.
+- Fixed integer speedup compatibility, boot-heartbeat mission upload races,
+  headless MAVProxy stdin EOF, and PX4 1.16 explicit SYSID being overwritten
+  before MAVLink startup. Added regression tests for the uncovered contracts.
+
 - Replaced Dockerfile-generated launch logic with a validated single-vehicle
   runner, actual vehicle-process supervision, bounded shutdown and readiness.
 - Added owned run roots with `work/`, archived `history/`, exclusive locking,

@@ -106,6 +106,7 @@ class ConfigTests(Fixture):
         config = self.resolve(NO_MAVPROXY="0")
         self.assertEqual(config["master"], "tcp:127.0.0.1:20000")
         self.assertIn("--out=tcpin:127.0.0.1:20000", config["proxy_args"])
+        self.assertIn("--non-interactive", config["proxy_args"])
 
     def test_unsafe_flags_rejected(self):
         for args in (["--udp"], ["--count", "2"], ["--sitl-instance-args", "--serial0=udp:foo"], ["--sys", "2"]):
@@ -118,6 +119,16 @@ class ConfigTests(Fixture):
                 self.resolve(**env)
         config = self.resolve(SITL_STATE="resume")
         self.assertNotIn("-w", sitl_config.sim_arguments(config, self.root / "work"))
+
+    def test_speedup_matches_upstream_integer_parser(self):
+        for speedup in ("1", "2", "2.0"):
+            config = self.resolve(SPEEDUP=speedup)
+            args = sitl_config.sim_arguments(config, self.root / "work")
+            value = args[args.index("--speedup") + 1]
+            self.assertEqual(value, str(int(value)))
+        for speedup in ("0.5", "1.5", "0"):
+            with self.subTest(speedup=speedup), self.assertRaises(sitl_config.ConfigError):
+                self.resolve(SPEEDUP=speedup)
 
     def test_preflight_mission_has_no_side_effects(self):
         (self.cfg / "bad.waypoints").write_text("QGC WPL 110\nbad data\n")
@@ -191,6 +202,82 @@ class PX4Tests(Fixture):
         self.assertFalse(healthcheck(output))
 
 
+class PackagingTests(unittest.TestCase):
+    def test_runtime_copy_sources_are_in_build_context(self):
+        import fnmatch
+        import shlex
+        allowed = [line[1:] for line in (HERE.parent / ".dockerignore").read_text().splitlines() if line.startswith("!")]
+        for name in ("Dockerfile", "Dockerfile.px4-sih"):
+            for line in (HERE.parent / name).read_text().splitlines():
+                if line.startswith("COPY docker/"):
+                    for source in shlex.split(line)[1:-1]:
+                        self.assertTrue(any(fnmatch.fnmatchcase(source, pattern) for pattern in allowed), source)
+
+    def test_installed_qualification_uses_image_entrypoint(self):
+        qualifier = load("test_qualifier", "qualify-runtime.py")
+        for script in (None, "/qualification/docker/run-sitl.sh"):
+            with tempfile.TemporaryDirectory() as temp, patch.object(qualifier.subprocess, "Popen") as popen:
+                container = qualifier.Container("test-image:local", Path(temp), {}, script)
+                try:
+                    args = popen.call_args.args[0]
+                    self.assertEqual("--entrypoint" in args, script is not None)
+                    self.assertEqual(args[-1], script or "test-image:local")
+                finally:
+                    container.log.close()
+
+
+class QualificationCleanupTests(unittest.TestCase):
+    def test_compose_cleanup_failure_is_retained_and_teardown_attempted(self):
+        qualifier = load("test_compose_qualifier", "qualify-compose.py")
+        failures = [(step, error) for step in ("logs", "down")
+                    for error in (SimpleNamespace(returncode=1), subprocess.TimeoutExpired(step, 180))]
+        for step, failure in failures:
+            with self.subTest(step=step, failure=failure), tempfile.TemporaryDirectory() as temp:
+                report = {"passed": True}
+                calls = []
+                def compose(*args, **kwargs):
+                    calls.append(args)
+                    if args[0] == step:
+                        if isinstance(failure, Exception):
+                            raise failure
+                        return failure
+                    return SimpleNamespace(returncode=0)
+                with self.assertRaises(RuntimeError):
+                    qualifier.finalize_report(compose, report, Path(temp))
+                saved = json.loads((Path(temp) / "report.json").read_text())
+                self.assertFalse(saved["passed"])
+                self.assertTrue(saved["cleanup_errors"])
+                self.assertEqual(calls[-1], ("down", "--volumes", "--remove-orphans"))
+
+    def test_compose_cleanup_success_preserves_success(self):
+        qualifier = load("test_compose_qualifier", "qualify-compose.py")
+        with tempfile.TemporaryDirectory() as temp:
+            qualifier.finalize_report(lambda *a, **kw: SimpleNamespace(returncode=0), {"passed": True}, Path(temp))
+            self.assertTrue(json.loads((Path(temp) / "report.json").read_text())["passed"])
+
+    def test_container_cleanup_is_checked_and_idempotent(self):
+        qualifier = load("test_runtime_qualifier", "qualify-runtime.py")
+        with tempfile.TemporaryDirectory() as temp, patch.object(qualifier.subprocess, "Popen"):
+            container = qualifier.Container("test-image:local", Path(temp), {})
+            with patch.object(qualifier, "command") as command:
+                container.close()
+                container.close()
+                command.assert_called_once_with("docker", "rm", "-f", container.name)
+            self.assertTrue(container.log.closed)
+
+
+class PX4IdentityTests(unittest.TestCase):
+    def test_sysid_hook_runs_before_upstream_mavlink_start(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            script = root / "init.d-posix/px4-rc.mavlink"
+            script.parent.mkdir()
+            script.write_text('printf "links-started\\n"\n')
+            result = subprocess.run(["sh", "-c", 'param() { printf "%s\\n" "$*"; }; . "$1"', "test", str(HERE / "px4-rc.mavlink")],
+                                    env={**os.environ, "PX4_RUNTIME_ETC": str(root), "PX4_PARAM_MAV_SYS_ID": "7"}, capture_output=True, text=True, check=True)
+            self.assertEqual(result.stdout.splitlines(), ["set MAV_SYS_ID 7", "links-started"])
+
+
 class LifecycleTests(Fixture):
     def setup_fake_vehicle(self, exit_early=False, fail_upload=False):
         # Exercise the actual supervisor, process-local overlay and terminal hook;
@@ -211,6 +298,7 @@ while True: time.sleep(1)
 mavlink = SimpleNamespace(MAV_AUTOPILOT_INVALID=8)
 class Heartbeat:
     autopilot = 3
+    system_status = 3
     def get_srcSystem(self): return 1
     def get_srcComponent(self): return 1
 class Connection:
@@ -274,6 +362,7 @@ class Message:
         self.kind, self.seq, self.system, self.component = kind, seq, system, component
         self.mission_type, self.type, self.autopilot = mission_type, result, autopilot
         self.target_system, self.target_component = 255, 190
+        self.system_status = 3
 
     def get_type(self):
         return self.kind
@@ -340,6 +429,18 @@ class UploadTests(unittest.TestCase):
         with self.assertRaises(upload.PlanError):
             upload.upload_items(self.master([]), Message("HEARTBEAT"), "fence", self.items, 0.02)
         self.assertLess(time.monotonic() - start, 0.5)
+
+    def test_connect_waits_for_initialized_autopilot(self):
+        beats = []
+        for status in (0, 1, 2, 3):
+            beat = Message("HEARTBEAT")
+            beat.system_status = status
+            beats.append(beat)
+        stream = iter(beats)
+        conn = SimpleNamespace(wait_heartbeat=lambda **kw: next(stream), close=lambda: None)
+        with patch.object(upload, "load_mavutil", return_value=SimpleNamespace(mavlink=CONSTANTS, mavlink_connection=lambda *a, **kw: conn)):
+            _, heartbeat = upload.connect("mock", 1)
+            self.assertEqual(heartbeat.system_status, 3)
 
     def test_connect_filters_heartbeat_and_closes_timeout(self):
         heartbeats = iter([None, Message("HEARTBEAT", system=9), Message("HEARTBEAT", autopilot=8), Message("HEARTBEAT")])
