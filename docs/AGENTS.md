@@ -71,6 +71,8 @@ Owns durable project documentation beyond quick user commands.
 - Update `RUNTIME_QUALIFICATION.md` when live runtime checks establish new
   compatibility evidence or expose a defect. Separate mounted-helper results
   from installed-image qualification and retain exact firmware/image identities.
+  When local evidence is archived, record its location and restoration procedure
+  there; verify archive contents before removing loose evidence.
 - Update `FUTURE_WORK.md` when a future improvement is added, removed, or
   clarified.
 - Update `CHANGELOG.md` when notable user-facing behavior, build/release flow,

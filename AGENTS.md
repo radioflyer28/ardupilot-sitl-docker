@@ -173,6 +173,8 @@ sandboxed environments.
   Share adapter/model logic and qualify both deployment lifecycles.
 - Keep custom external-physics adapters in project-owned code outside
   `./ardupilot`; prefer existing upstream interfaces over an ArduPilot fork.
+- Keep generated SITL/GCS telemetry and runtime state out of commits through
+  `.gitignore`; preserve intentional parameter/config inputs under `configs/`.
 - Keep the repo uncluttered. Prefer small checked-in examples plus generators
   for large derived catalogs. RE: scripts/populate-config-bundles.py
 

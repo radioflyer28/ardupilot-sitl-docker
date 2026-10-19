@@ -28,6 +28,9 @@ The guides cover build/run commands, backend switching, shared read-only model
 catalogs (`JSBSIM_MODEL`) and qualification limits. Ordinary autopilot images
 default to internal physics; dedicated combined JSBSim images default to JSBSim.
 
+For a step-by-step WSL/Docker walkthrough, see
+[run a model catalog with Windows Mission Planner](docs/ARDUCOPTER_JSBSIM.md#run-an-existing-catalog-with-windows-mission-planner).
+
 Choose a Runtime
 ----------------
 

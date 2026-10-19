@@ -30,6 +30,17 @@ build/
 
 # Local logs, temp files, and runtime state
 artifacts/
+
+# Generated SITL/GCS telemetry; keep intentional config .parm files trackable.
+*.tlog
+*.tlog.raw
+*.BIN
+*.bin.log
+*.ulg
+/mav.parm
+/eeprom.bin
+/logs/
+
 *.log
 *.tmp
 *.swp

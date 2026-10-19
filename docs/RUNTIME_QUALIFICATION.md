@@ -1,5 +1,30 @@
 # Runtime Qualification
 
+## Local evidence archive
+
+Historical test outputs referenced below are retained locally in ignored
+`artifacts/qualification-evidence.tar.zst`, including qualification runs, review
+runs, build logs and model-check JSON. These files are not runtime dependencies
+or downloadable repository assets. The editable `artifacts/jsbsim-model-catalog/`
+remains unpacked; disposable investigation tools and source snapshots were removed.
+
+The archive was integrity-tested and compared with all 70 source entries before
+removing loose copies. SHA-256:
+`fe585fac9f09bbda3ea6fdbc6cf81f5732859c52b2be884a6133e507e080d5b2`.
+
+Inspect or restore from the repository root (restore into a new directory to
+avoid overwriting newer runs):
+
+```bash
+tar --zstd -tf artifacts/qualification-evidence.tar.zst
+mkdir artifacts/restored-evidence
+tar --zstd -xf artifacts/qualification-evidence.tar.zst -C artifacts/restored-evidence
+```
+
+Recorded `artifacts/<run>/` paths then correspond to
+`artifacts/restored-evidence/<run>/`. Docker images and named run volumes are
+separate storage and were not pruned.
+
 ## Qualification layers
 
 Live checks performed on 2026-10-16 UTC with Docker Engine 28.1.1 / Docker Desktop.

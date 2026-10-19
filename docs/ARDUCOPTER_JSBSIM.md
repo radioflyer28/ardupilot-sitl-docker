@@ -119,6 +119,90 @@ For catalogs, pair `compose.jsbsim-split.yml` with
 Use `qualify-jsbsim.py --deployment split` for split lifecycle/flight checks.
 Both topologies keep localhost publication and explicit LAN opt-in.
 
+## Run an existing catalog with Windows Mission Planner
+
+Use this walkthrough for Docker in WSL with Mission Planner on Windows. First
+build/load the combined image using [the build instructions above](#running-the-experimental-integration).
+No rebuild is needed to select a compatible aircraft from a mounted catalog.
+
+### 1. Select the catalog in WSL
+
+From the repository root, in the same shell used for subsequent Compose commands:
+
+```bash
+export JSBSIM_MODELS_DIR="$PWD/artifacts/jsbsim-model-catalog"
+export JSBSIM_MODEL=HeavyQuad
+ls "$JSBSIM_MODELS_DIR/aircraft/$JSBSIM_MODEL/$JSBSIM_MODEL.xml"
+```
+
+This assumes your local catalog already contains HeavyQuad. The ignored catalog
+and HeavyQuad variant are **not included in a fresh clone**. If missing, follow
+[the export and model-creation instructions below](#multiple-aircraft-in-a-read-only-model-catalog),
+then point `JSBSIM_MODELS_DIR` at that catalog. A starter export contains F450 only.
+
+### 2. Start the vehicle
+
+Stop any previous scenario using TCP 5760 before starting this one:
+
+```bash
+docker compose -f compose.jsbsim.yml -f compose.jsbsim-models.yml up -d --wait
+```
+
+The override mounts the catalog read-only at `/models` and selects HeavyQuad.
+Wait for successful healthy startup before connecting a client. To watch logs:
+
+```bash
+docker compose -f compose.jsbsim.yml -f compose.jsbsim-models.yml logs -f
+```
+
+Ctrl+C leaves the detached vehicle running; it only stops following logs.
+
+### 3. Connect from Windows
+
+In Windows PowerShell, check the published endpoint:
+
+```powershell
+Test-NetConnection 127.0.0.1 -Port 5760
+```
+
+In Mission Planner, select **TCP**, click **Connect**, and enter host
+**127.0.0.1**, port **5760**. Use only one direct TCP client: do not also attach
+MAVProxy or the automated flight checker. After GPS/EKF initialization, try a
+normal-arm takeoff to 5 m, a short hover, a small reposition, then land and
+confirm disarm. Keep normal arming checks enabled.
+
+If Windows cannot reach localhost, WSL/Docker networking may differ from the
+Docker Desktop integration. Stop the scenario with the command below, then in
+WSL explicitly publish on all interfaces and find the WSL IPv4 address:
+
+```bash
+export SITL_BIND_ADDRESS=0.0.0.0
+docker compose -f compose.jsbsim.yml -f compose.jsbsim-models.yml up -d --wait
+hostname -I
+```
+
+Test/connect to that WSL IPv4 address from Windows instead. This broadens
+publication to reachable interfaces; use only on your trusted workstation/LAN.
+For later localhost-only runs, stop first and `unset SITL_BIND_ADDRESS`.
+
+### 4. Stop or switch aircraft
+
+```bash
+docker compose -f compose.jsbsim.yml -f compose.jsbsim-models.yml down
+```
+
+Named volumes retain vehicle logs and physics truth; do not add `--volumes` if
+you want to keep them. Fresh startup archives the previous run. Stop before
+editing model files or changing the selection. To run F450 from the same catalog:
+
+```bash
+export JSBSIM_MODEL=F450
+docker compose -f compose.jsbsim.yml -f compose.jsbsim-models.yml up -d --wait
+```
+
+A successful flight is a connectivity and coupled-flight smoke test, not proof
+of real-aircraft fidelity or arbitrary-model compatibility.
+
 ## Multiple aircraft in a read-only model catalog
 
 Build the combined image above, then export the same editable model assets used
