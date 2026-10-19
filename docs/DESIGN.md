@@ -23,12 +23,12 @@ must not rebuild the autopilot or depend on an interactive developer terminal.
 Use four logical profiles: ArduPilot/internal, ArduPilot/external, PX4/internal
 (SIH), and PX4/external. These are capability/deployment profiles, not a mandate
 for four Dockerfiles, independent implementations or simultaneous containers.
-ArduPilot internal dynamics and PX4 SIH are qualified runtime paths. The
-ArduCopter/JSBSim F450 external path is experimental, with installed normal-EKF
-hover/yaw/land and coupled process-failure checks passing for one pinned tuple;
-see `RUNTIME_QUALIFICATION.md` for its narrower tested scope.
+ArduPilot internal dynamics and PX4 SIH are qualified runtime paths. Both
+ArduCopter/JSBSim and PX4/JSBSim remain experimental, with scoped installed
+normal-EKF hover/yaw/land and coupled-failure checks passing for pinned tuples;
+see `RUNTIME_QUALIFICATION.md` for the exact tested scope.
 
-Default single-vehicle ArduCopter/JSBSim to one combined container, with separate
+Default single-vehicle ArduCopter/JSBSim and PX4/JSBSim to one combined container, with separate
 supervised processes and an isolated physics Python environment. Retain independent
 simulator/autopilot images and explicit split Compose for deployment flexibility.
 Shared-world simulators may still merit separate containers. Share primitives, but
@@ -49,6 +49,14 @@ A read-only native JSBSim catalog can hold multiple named quad-X variants with
 shared engine assets. Select with `JSBSIM_MODEL`; preserve custom physical XML
 and the same direct-motor interface. Selection support is distinct from model
 qualification; packaged F450 remains the no-catalog default.
+
+PX4's sibling adapter uses simulator MAVLink over TCP with sensor-first bootstrap
+and 400 Hz lockstep/IMU integration, not ArduPilot's JSON transport. It reuses
+`QuadX`/catalog staging while adding seeded sensor noise independently of truth.
+A project-owned PATH hook applies model-derived rotor positions and the final
+motor/clock contract before native simulator startup. The tested v1.16.0 binary
+already contains the required module, so neither firmware nor upstream scripts
+are modified. [PX4_JSBSIM.md](PX4_JSBSIM.md) owns usage and limitations.
 
 ## Image architecture
 
@@ -142,8 +150,8 @@ Each root contains:
 - `work/`: current vehicle state, installed scripts and vehicle logs.
 - `history/<id>/`: archived work directories from fresh starts.
 - `status.json`: lifecycle state plus supervisor timestamp.
-- ArduPilot additionally records `effective-config.json` and internal process
-  monitor/temporary files.
+- ArduPilot and PX4/JSBSim additionally record `effective-config.json`; temporary
+  staging and process-monitor files remain owned by their respective runners.
 
 Run roots must be empty or carry the runner's ownership marker. An exclusive
 file lock prevents concurrent reuse. The runner rejects unowned nonempty roots

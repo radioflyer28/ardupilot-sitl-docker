@@ -458,6 +458,73 @@ matching `*-models.yml` override. The live checker defaults to local mode; add
 Earlier reports in this document retain their original image/topology scope.
 These checks do not establish arbitrary-model fidelity or cross-host physics.
 
+## PX4/JSBSim qualification
+
+The project-owned PX4 simulator-MAVLink adapter shares the same JSBSim 1.3.3
+F450/catalog model implementation as ArduCopter. Both topologies passed installed
+normal-EKF takeoff, 10-second hover, commanded yaw/reposition, landing and normal
+auto-disarm. No force-arm or disabled estimator/arming checks were used.
+
+Qualified images:
+
+- `px4-jsbsim:qualify-v1.16.0-local`:
+  `sha256:2cf41c517d2845f4d5db7a0403507fa0518628a8949e526c6f66a4ddc2e7d8af`
+- `px4-jsbsim:qualify-v1.16.0-split`:
+  `sha256:24cb8895ca83bb130ca3cf73b139d964d47d757568a51cfd2dbcadea907b9be2`
+- `px4-jsbsim:qualify-v1.16.0-physics`:
+  `sha256:3bdebcfc831a3b420ad13d5d7ed824bc3555d38ddb7b519b31ec90852d44d47e`
+
+The unchanged PX4 binary in the base and both derived autopilot images hashes to
+`37b9ebd0d673d569fab18663f82aee74430b76f5d2a82f45e42c472d7b788599`.
+The tested build directory is `px4_sitl_default`, not a stripped newer SIH target.
+Installed helper hashes, localhost UDP publication and unpublished simulator TCP
+were checked. The combined physics environment is isolated at `/opt/jsbsim-venv`.
+
+Evidence beneath ignored `artifacts/`:
+
+| Report | Passed scope |
+| --- | --- |
+| `qualification-px4-jsbsim-local-flight-final` | F450 flight; physics child death fails/stops combined run |
+| `qualification-px4-jsbsim-split-flight-final` | F450 flight; simulator container death fails/stops PX4 |
+| `qualification-px4-jsbsim-local-autopilot-loss-final` | PX4 binary death stops local physics |
+| `qualification-px4-jsbsim-split-autopilot-loss-final` | PX4 container death stops external physics |
+| `qualification-px4-jsbsim-heavy-stop-final` | Mounted HeavyQuad flight and combined graceful shutdown |
+| `qualification-px4-jsbsim-split-heavy-stop-final` | Mounted HeavyQuad flight and clean stopped states for both split processes |
+| `qualification-px4-jsbsim-split-stop-final` | Independent split ordered-stop regression |
+| `qualification-px4-jsbsim-split-recreation` | Two down/up cycles retain volumes and re-establish healthy fresh runs |
+| `qualification-px4-jsbsim-sysid-archive-final` | SYSID 17 initialization and fresh restart archiving vehicle/physics together |
+| `qualification-px4-sih-jsbsim-regression-final` | Native SIH readiness, host reconnection, down/resume retention, fresh reset and relay-failure cleanup on the new autopilot target |
+| `qualification-arducopter-px4-jsbsim-regression` | ArduCopter flight and physics-loss regression after shared supervisor/qualification changes |
+
+F450 hover altitudes were 4.970–5.000 m across both topologies, with maximum
+reported horizontal displacement about 0.035 m. HeavyQuad hover across both was
+4.969–5.001 m with displacement about 0.035 m. HeavyQuad's 101 staged asset hashes
+matched the read-only source catalog; real model loading confirmed 1.8 kg versus
+F450's 1.4 kg. Installed force/sensor/motor-sign checks also passed separately
+(`px4-jsbsim-installed-model-check-final.json`). These measurements establish scoped
+operation, not real-aircraft fidelity or cross-run determinism.
+
+The ArduCopter regression used a separate tag,
+`ardupilot-sitl:qualify-4.6.3-jsbsim-px4-regression`, image
+`sha256:230f279df587c43f0a72b8bc3e347cc475cbd2cf8a6e8bfd2d812c1bbfbe14ed`;
+previous release and qualification tags were preserved.
+
+Development probes exposed two integration contracts: a 400 Hz sensor exchange
+must match PX4's IMU integration rate, and perfectly constant ideal sensors trigger
+native stuck-sensor validation. Seeded white sensor noise resolved the latter;
+noise-free truth is retained separately. The flight client also decodes PX4's
+bytewise integer parameter representation rather than treating it as float-cast
+ArduPilot parameter data. Split ordered shutdown exposed a TCP-EOF race: the
+adapter now invalidates readiness immediately but allows up to its link timeout
+for Compose's following stop signal. Without that signal it still fails on peer
+loss. Final images above passed both failure directions and clean stop checks.
+
+Reproduce with `docker/qualify-jsbsim.py --family px4`; add `--deployment split`,
+`--models-dir`, `--model`, or `--fault physics|sitl|stop` as needed. See
+[PX4_JSBSIM.md](PX4_JSBSIM.md) for build/run commands and restrictions. Other
+releases, arbitrary aircraft, cross-host physics, real LAN clients, sensor fidelity,
+transport interruption/reconnection and checkpoint restore remain unqualified.
+
 ## Defects exposed and fixed
 
 1. **ArduPilot speedup argument:** the resolver emitted `1.0`, rejected by
@@ -489,10 +556,10 @@ incorrectly treating successful startup-script return as valid position.
 
 ## Supporting checks
 
-- 45 host-only regression tests pass (`python3 -m unittest discover -s docker -p 'test_*.py'`).
+- 71 host-only regression tests pass (`python3 -m unittest discover -s docker -p 'test_*.py'`).
 - Python compilation, Bash syntax, the POSIX PX4 startup-hook syntax, Compose
   configuration, local Markdown links and `git diff --check` pass.
-- Static `docker buildx build --check` completes for both Dockerfiles. Actual
+- Static `docker buildx build --check` completes for the runtime Dockerfiles. Actual
   package builds and installed-image/Compose qualification also pass as above.
 
 ## Remaining qualification boundaries

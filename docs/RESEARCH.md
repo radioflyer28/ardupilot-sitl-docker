@@ -9,6 +9,17 @@ project decision, summarize the decision in `docs/DESIGN.md`. Once it becomes
 planned work, track the action in `docs/FUTURE_WORK.md`.
 
 
+## PX4 + JSBSim
+
+[PX4_JSBSIM.md](PX4_JSBSIM.md) records the pinned-release simulator interface,
+upstream bridge reuse assessment and implemented runtime. The existing PX4 1.16.0
+binary already contains the required module/airframe. Combined and split images
+passed normal-EKF takeoff/hover/yaw/landing and coupled-failure checks; a mounted
+HeavyQuad variant also passed flight and clean shutdown in both topologies. SIH regression,
+SYSID 17 and joint vehicle/physics archival checks pass. Shared model catalogs do
+not imply shared transport or calibrated aircraft fidelity; exact evidence is in
+[RUNTIME_QUALIFICATION.md](RUNTIME_QUALIFICATION.md#px4jsbsim-qualification).
+
 ## SITL Initial State
 
 Status: runtime Lua support and a copyable initial-state script are

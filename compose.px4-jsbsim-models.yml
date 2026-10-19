@@ -1,0 +1,11 @@
+services:
+  px4:
+    environment:
+      JSBSIM_MODEL_DIR: /models
+    volumes:
+      - type: bind
+        source: ${JSBSIM_MODELS_DIR:?Set JSBSIM_MODELS_DIR to a native JSBSim catalog}
+        target: /models
+        read_only: true
+        bind:
+          create_host_path: false

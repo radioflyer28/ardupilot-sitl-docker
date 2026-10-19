@@ -16,6 +16,8 @@ Owns durable project documentation beyond quick user commands.
   and multi-SITL artifact organization.
 - `PX4_SIH.md`: research and runtime design notes for the PX4 SIH sibling
   image.
+- `PX4_JSBSIM.md`: experimental PX4/JSBSim build/run/catalog guide, simulator
+  transport and sensor contracts, bridge reuse assessment and qualified limits.
 - `EXTERNAL_SIMULATORS.md`: external physics and flight-dynamics simulator
   options for ArduPilot and PX4.
 - `RUNTIME_PROFILES.md`: four-profile terminology, proposed external-dynamics

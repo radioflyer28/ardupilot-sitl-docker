@@ -41,7 +41,9 @@ The first experimental pairing is ArduCopter + JSBSim F450 through a project-own
 JSON-physics adapter, not the native fixed-wing-oriented JSBSim connector. It has
 combined and optional separate simulator packaging; see [ARDUCOPTER_JSBSIM.md](ARDUCOPTER_JSBSIM.md) for
 usage and exact qualification status. Catalog support does not establish that
-an arbitrary aircraft/release combination works.
+an arbitrary aircraft/release combination works. [PX4 + JSBSim](PX4_JSBSIM.md)
+now uses the same catalog through a separate simulator-MAVLink adapter; pinned
+v1.16.0 combined/split flight checks pass without rebuilding PX4.
 
 - For a shared external-simulator *platform*, start by evaluating modern
   Gazebo: both autopilots document integrations, but each needs its own bridge,

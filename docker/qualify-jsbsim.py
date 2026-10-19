@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in installed ArduCopter/JSBSim coupling, flight and failure qualification."""
+"""Opt-in installed ArduCopter/PX4 JSBSim coupling, flight and failure qualification."""
 import argparse
 import hashlib
 import json
@@ -14,7 +14,10 @@ import uuid
 REPO = Path(__file__).resolve().parent.parent
 
 
-def flight_client(endpoint):
+def flight_client(endpoint, family="ardupilot"):
+    if family == "px4":
+        from px4_jsbsim_flight import flight_client as px4_flight
+        return px4_flight(endpoint)
     from pymavlink import mavutil
     link = mavutil.mavlink_connection(endpoint, source_system=254)
     events = []
@@ -118,19 +121,24 @@ def qualify(args):
         raise ValueError("output must be empty")
     output.mkdir(parents=True, exist_ok=True)
     project = "jsbsim-qualify-" + uuid.uuid4().hex[:10]
+    px4 = args.family == "px4"
+    vehicle_service = "px4" if px4 else "sitl"
+    vehicle_root = "/home/px4/runs" if px4 else "/home/ardupilot/runs"
     env = dict(os.environ, ARDUCOPTER_JSBSIM_IMAGE=args.autopilot_image, JSBSIM_IMAGE=args.simulator_image,
                SITL_PORT=str(args.port), SITL_BIND_ADDRESS="127.0.0.1", LAT="37.1971467",
                LON="-80.5780381", ALT="618", DIR="0")
     env["JSBSIM_MODEL"] = args.model
+    env.update(PX4_JSBSIM_IMAGE=args.autopilot_image, PX4_JSBSIM_PHYSICS_IMAGE=args.simulator_image,
+               PX4_GCS_PORT=str(args.port), SYSID="1", JSBSIM_SEED="0")
     local = args.deployment == "local"
-    filename = "compose.jsbsim" if local else "compose.jsbsim-split"
+    filename = ("compose.px4-jsbsim" if px4 else "compose.jsbsim") + ("" if local else "-split")
     base = ["docker", "compose", "-p", project, "-f", str(REPO / (filename + ".yml"))]
     if args.models_dir:
         env["JSBSIM_MODELS_DIR"] = str(Path(args.models_dir).resolve())
         base.extend(["-f", str(REPO / (filename + "-models.yml"))])
-    physics_root = "/home/ardupilot/runs/work/physics" if local else "/physics"
+    physics_root = vehicle_root + "/work/physics" if local else "/physics"
     services = ("sitl",) if local else ("sitl", "physics")
-    report = {"passed": False, "project": project, "deployment": args.deployment, "cases": []}
+    report = {"passed": False, "project": project, "family": args.family, "deployment": args.deployment, "cases": []}
     containers = {}
 
     def run(command, timeout=120, check=True):
@@ -149,10 +157,14 @@ def qualify(args):
         for name, image in (("autopilot", args.autopilot_image), ("simulator", simulator_image)):
             report[name] = json.loads(run(["docker", "image", "inspect", image]).stdout)[0]["Id"]
         report["installed_helpers"] = {}
+        autopilot_helpers = (["run-px4-sih.sh", "run_state.py", "px4_jsbsim_runtime.py", "px4-rc.simulator",
+                              "px4-rc.mavlink", "px4-gcs-relay.py", "upload-plan-artifacts.py"] if px4 else
+                             ["run-sitl.sh", "run-sitl.py", "sitl_config.py", "run_state.py",
+                              "launch-sitl.py", "sitl-terminal.py", "upload-plan-artifacts.py"])
+        physics_helpers = ["jsbsim_adapter.py", "run_state.py"] + (["px4_jsbsim_adapter.py"] if px4 else [])
         for image, prefix, names in (
-            (args.autopilot_image, "/usr/local/bin", ["run-sitl.sh", "run-sitl.py", "sitl_config.py", "run_state.py",
-                                                    "launch-sitl.py", "sitl-terminal.py", "upload-plan-artifacts.py"]),
-            (simulator_image, "/usr/local/bin" if local else "/opt/sitl", ["jsbsim_adapter.py", "run_state.py"])):
+            (args.autopilot_image, "/usr/local/bin", autopilot_helpers),
+            (simulator_image, "/usr/local/bin" if local else "/opt/sitl", physics_helpers)):
             expected = {name: hashlib.sha256((REPO / "docker" / name).read_bytes()).hexdigest() for name in names}
             code = ("import hashlib,json,pathlib; print(json.dumps({name:hashlib.sha256("
                     f"(pathlib.Path({prefix!r})/name).read_bytes()).hexdigest() for name in {names!r}" + "}))")
@@ -161,16 +173,20 @@ def qualify(args):
             report["installed_helpers"].setdefault(image, {}).update(actual)
         compose("up", "-d", "--wait", "--wait-timeout", "90")
         for name in services:
-            containers[name] = compose("ps", "--quiet", name).stdout.strip()
+            containers[name] = compose("ps", "--quiet", vehicle_service if name == "sitl" else name).stdout.strip()
         if local:
             containers["physics"] = containers["sitl"]
         details = json.loads(run(["docker", "inspect", containers["sitl"]]).stdout)[0]
-        assert details["NetworkSettings"]["Ports"]["5760/tcp"] == [{"HostIp": "127.0.0.1", "HostPort": str(args.port)}]
+        published = "18670/udp" if px4 else "5760/tcp"
+        assert details["NetworkSettings"]["Ports"][published] == [{"HostIp": "127.0.0.1", "HostPort": str(args.port)}]
+        if px4:
+            assert not details["NetworkSettings"]["Ports"].get("4560/tcp"), "simulator link must not be published"
         report["cases"].append("installed readiness and localhost publication")
         report["networks"] = list(details["NetworkSettings"]["Networks"])
         if not args.skip_flight:
-            flight = run([args.client_python, str(Path(__file__).resolve()), "--flight-client",
-                          f"tcp:127.0.0.1:{args.port}"], timeout=260)
+            endpoint = f"{'udpout' if px4 else 'tcp'}:127.0.0.1:{args.port}"
+            flight = run([args.client_python, str(Path(__file__).resolve()), "--family", args.family,
+                          "--flight-client", endpoint], timeout=260)
             report["flight"] = json.loads(flight.stdout)
             report["cases"].append("normal EKF, takeoff, 10s hover, yaw, land and disarm")
             run(["docker", "cp", f"{containers['physics']}:{physics_root}/work/truth.jsonl", str(output / "flight-truth.jsonl")])
@@ -183,24 +199,31 @@ def qualify(args):
             report["flight"] = {"skipped": True}
         victim = args.fault
         survivor = "sitl" if local or victim == "physics" else "physics"
-        root = "/home/ardupilot/runs" if survivor == "sitl" else physics_root
+        root = vehicle_root if survivor == "sitl" else physics_root
         if victim == "stop":
             compose("stop", "--timeout", "15")
         elif local and victim == "physics":
             code = f"import json,os,signal; os.kill(json.load(open('{physics_root}/status.json'))['pid'], signal.SIGKILL)"
             run(["docker", "exec", containers["sitl"], "python3", "-c", code])
         elif local:
-            run(["docker", "exec", containers["sitl"], "pkill", "-KILL", "-x", "arducopter"])
+            run(["docker", "exec", containers["sitl"], "pkill", "-KILL", "-x", "px4" if px4 else "arducopter"])
         else:
             run(["docker", "kill", containers[victim]])
         stopped = run(["docker", "wait", containers[survivor]], timeout=20)
-        assert stopped.stdout.strip() in (("0", "143") if victim == "stop" else ("1",)), stopped.stdout
+        expected_codes = ("0", "143") if victim == "stop" else (("137",) if px4 and local and victim == "sitl" else ("1",))
+        assert stopped.stdout.strip() in expected_codes, stopped.stdout
         run(["docker", "cp", f"{containers[survivor]}:{root}/status.json", str(output / "survivor-status.json")])
         expected = "stopped" if victim == "stop" else "failed"
         assert json.loads((output / "survivor-status.json").read_text())["state"] == expected
+        if not local and victim == "stop":
+            vehicle_exit = run(["docker", "wait", containers["sitl"]], timeout=20).stdout.strip()
+            assert vehicle_exit in ("0", "143"), vehicle_exit
+            run(["docker", "cp", f"{containers['sitl']}:{vehicle_root}/status.json", str(output / "vehicle-stop.json")])
+            assert json.loads((output / "vehicle-stop.json").read_text())["state"] == "stopped"
         if local and victim != "physics":
             run(["docker", "cp", f"{containers['sitl']}:{physics_root}/status.json", str(output / "physics-stop.json")])
-            assert json.loads((output / "physics-stop.json").read_text())["state"] == "stopped"
+            allowed = ("stopped", "failed") if px4 and victim == "sitl" else ("stopped",)
+            assert json.loads((output / "physics-stop.json").read_text())["state"] in allowed
         report["cases"].append("graceful stop" if victim == "stop" else f"{victim} death stops {survivor}")
         report["passed"] = True
     except Exception as exc:
@@ -210,8 +233,8 @@ def qualify(args):
         try:
             logs = compose("logs", "--no-color", check=False)
             (output / "containers.log").write_text(logs.stdout + logs.stderr)
-            for name, root in (("physics", physics_root), ("sitl", "/home/ardupilot/runs")):
-                service = "sitl" if local else name
+            for name, root in (("physics", physics_root), ("sitl", vehicle_root)):
+                service = vehicle_service if local or name == "sitl" else name
                 ident = containers.get(name) or compose("ps", "-a", "--quiet", service).stdout.strip()
                 if ident:
                     run(["docker", "cp", f"{ident}:{root}", str(output / name)])
@@ -234,18 +257,23 @@ def main():
     p.add_argument("--flight-client")
     p.add_argument("--output")
     p.add_argument("--client-python", default="/usr/bin/python3.10")
-    p.add_argument("--port", type=int, default=5760)
+    p.add_argument("--port", type=int)
+    p.add_argument("--family", choices=("ardupilot", "px4"), default="ardupilot")
     p.add_argument("--skip-flight", action="store_true", help="qualify startup/failure only, not flight")
     p.add_argument("--fault", choices=("physics", "sitl", "stop"), default="physics")
     p.add_argument("--deployment", choices=("local", "split"), default="local")
     p.add_argument("--model", default="F450")
     p.add_argument("--models-dir")
     p.add_argument("--autopilot-image")
-    p.add_argument("--simulator-image", default="jsbsim:qualify-1.3.3-split")
+    p.add_argument("--simulator-image")
     args = p.parse_args()
-    args.autopilot_image = args.autopilot_image or f"ardupilot-sitl:qualify-4.6.3-jsbsim-{args.deployment}"
+    px4 = args.family == "px4"
+    args.port = args.port or (18570 if px4 else 5760)
+    args.autopilot_image = args.autopilot_image or (f"px4-jsbsim:qualify-v1.16.0-{args.deployment}" if px4 else
+                                                   f"ardupilot-sitl:qualify-4.6.3-jsbsim-{args.deployment}")
+    args.simulator_image = args.simulator_image or ("px4-jsbsim:qualify-v1.16.0-physics" if px4 else "jsbsim:qualify-1.3.3-split")
     if args.flight_client:
-        flight_client(args.flight_client)
+        flight_client(args.flight_client, args.family)
     elif args.output:
         qualify(args)
     else:

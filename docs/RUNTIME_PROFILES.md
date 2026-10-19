@@ -6,8 +6,10 @@ General design direction, not a universal implemented external-simulator
 interface. The repository has qualified ArduPilot/internal and PX4 SIH paths plus
 an experimental ArduCopter/JSBSim F450 adapter, simulator image and Compose path.
 See [ARDUCOPTER_JSBSIM.md](ARDUCOPTER_JSBSIM.md) for that narrower implementation
-and its qualification status. Host-only tests are not live firmware/FDM or flight
-qualification; other external profiles remain proposed.
+and its qualification status. [PX4_JSBSIM.md](PX4_JSBSIM.md) covers the sibling
+PX4 simulator-MAVLink adapter, shared catalog and scoped installed flight checks.
+Host-only tests are not live firmware/FDM or flight qualification; other external
+backends remain proposed.
 
 Use this note for architecture, terminology, research implications and acceptance
 criteria. [EXTERNAL_SIMULATORS.md](EXTERNAL_SIMULATORS.md) owns the simulator
@@ -23,7 +25,7 @@ The useful top-level matrix is autopilot family × dynamics placement:
 | ArduPilot / internal | ArduPilot SITL | Built-in SITL dynamics | Primary runtime path |
 | ArduPilot / external | ArduPilot SITL configured for a named backend | Separate FDM/simulator plus compatible integration | Experimental ArduCopter/JSBSim F450; scoped installed flight/failure checks pass |
 | PX4 / internal | PX4 SITL with SIH | Internal SIH physics | Existing sibling runtime path |
-| PX4 / external | PX4 SITL with required simulation modules | Separate FDM/simulator plus compatible integration | Proposed; not qualified here |
+| PX4 / external | PX4 SITL with required simulation modules | Separate FDM/simulator plus compatible integration | Experimental PX4 1.16.0/JSBSim; scoped combined/split flight and failure checks pass |
 
 Use **runtime profile** for each logical combination. Internal/external describes
 where physical dynamics execute relative to the autopilot, not whether a viewer
@@ -45,10 +47,11 @@ Consequences:
   containers. Share validated configuration/state/lifecycle primitives.
 - One ArduPilot image may support both internal and some external profiles if its
   prebuilt binaries include the needed support; verify each backend/release.
-- Plan a PX4 external-simulation build/runtime variant rather than assuming the
-  stripped SIH path can connect to external physics. It needs the appropriate
-  modules, airframes, startup scripts and possibly simulator client libraries.
-  Changing the SIH `MODEL` env var is not sufficient.
+- Check PX4 simulator modules and airframes per release/build target. The tested
+  v1.16.0 `px4_sitl_default` binary already supports simulator MAVLink, so JSBSim
+  layers helpers and physics onto it without rebuilding firmware. A stripped SIH
+  target may differ. Changing `MODEL` alone still does not supply the external
+  physics process, sensor contract or lifecycle.
 - There may be several external backend variants per autopilot. Four is a
   taxonomy, not a maximum package count or a promise of universal compatibility.
 
@@ -64,7 +67,7 @@ GCS / controller -- MAVLink --> autopilot service
                               optional viewer
 ```
 
-Keep one autopilot runtime per vehicle. For single-vehicle ArduCopter/JSBSim,
+Keep one autopilot runtime per vehicle. For single-vehicle ArduCopter/JSBSim and PX4/JSBSim,
 default to a combined container with separately supervised processes and isolated
 Python dependencies; retain the split-image deployment as an option. Shared-world
 simulators may merit separately built/running FDM services. Dynamics outside the

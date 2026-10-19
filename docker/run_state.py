@@ -179,6 +179,7 @@ def main():
     parser.add_argument("--master", default=os.environ.get("PLAN_UPLOAD_MASTER"))
     parser.add_argument("--target-system", type=int)
     parser.add_argument("--healthcheck", action="store_true")
+    parser.add_argument("--validate", action="store_true")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if args.healthcheck:
@@ -199,6 +200,13 @@ def main():
         relay_enabled = os.environ.get("PX4_GCS_RELAY") or "0"
         if relay_enabled not in ("0", "1"):
             raise ValueError("PX4_GCS_RELAY must be 0 or 1")
+        physics_config = None
+        if (os.environ.get("DYNAMICS_BACKEND") or "internal") != "internal":
+            from px4_jsbsim_runtime import resolve, PhysicsSession
+            physics_config = resolve(args, sysid)
+        if args.validate:
+            print(json.dumps({"family": "px4", "sysid": sysid, "physics": physics_config}, indent=2))
+            return 0
         enable_subreaper()
         with RunDirectory(Path(args.root).resolve(), args.state) as directory:
             processes = []
@@ -213,7 +221,9 @@ def main():
                         "--listen-port", str(18670 + instance), "--native-port", str(18570 + instance),
                         "--ready-file", str(relay_ready)], start_new_session=True)
                     processes.append(relay)
-                child = subprocess.Popen(command, cwd=directory.work, start_new_session=True)
+                physics = PhysicsSession(physics_config, directory, processes) if physics_config else None
+                child_env = physics.prepare(lambda: requested) if physics else None
+                child = subprocess.Popen(command, cwd=directory.work, env=child_env, start_new_session=True)
                 processes.append(child)
                 initializer = subprocess.Popen(initialize, start_new_session=True)
                 processes.append(initializer)
@@ -228,7 +238,10 @@ def main():
                     initialized = initializer.poll()
                     if initialized is not None and initialized != 0:
                         raise RuntimeError(f"PX4 initialization failed with status {initialized}")
-                    if not ready and initialized == 0 and (relay is None or relay_ready.is_file()):
+                    physics_ready = physics.ready() if physics else True
+                    if ready and not physics_ready:
+                        raise RuntimeError("PX4 JSBSim stopped reporting advancing physics")
+                    if not ready and initialized == 0 and physics_ready and (relay is None or relay_ready.is_file()):
                         ready = True
                         print(f"run-px4: ready; SYSID={sysid}; run directory={directory.root}", flush=True)
                     if not ready and time.monotonic() > deadline:

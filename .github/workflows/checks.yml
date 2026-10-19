@@ -30,7 +30,7 @@ jobs:
         run: |
           python3 -m py_compile scripts/populate-config-bundles.py docker/*.py
           for script in scripts/*.sh docker/*.sh; do bash -n "$script"; done
-          sh -n docker/px4-rc.mavlink
+          for script in docker/px4-rc.*; do sh -n "$script"; done
       - name: Checked-in JSON bundles
         run: |
           python3 - <<'PY'
@@ -48,11 +48,14 @@ jobs:
           docker compose -f compose.sitl.yml -f docker/compose.qualification.yml config --quiet
           JSBSIM_MODELS_DIR=/tmp/config-only-models JSBSIM_MODEL=HeavyQuad docker compose -f compose.jsbsim.yml -f compose.jsbsim-models.yml config --quiet
           JSBSIM_MODELS_DIR=/tmp/config-only-models JSBSIM_MODEL=HeavyQuad docker compose -f compose.jsbsim-split.yml -f compose.jsbsim-split-models.yml config --quiet
+          JSBSIM_MODELS_DIR=/tmp/config-only-models docker compose -f compose.px4-jsbsim.yml -f compose.px4-jsbsim-models.yml config --quiet
+          JSBSIM_MODELS_DIR=/tmp/config-only-models docker compose -f compose.px4-jsbsim-split.yml -f compose.px4-jsbsim-split-models.yml config --quiet
           python3 - <<'PY'
           import json
           import os
           import subprocess
-          for filename in ('compose.sitl.yml', 'compose.px4-sih.yml', 'compose.jsbsim.yml', 'compose.jsbsim-split.yml'):
+          for filename in ('compose.sitl.yml', 'compose.px4-sih.yml', 'compose.jsbsim.yml', 'compose.jsbsim-split.yml',
+                           'compose.px4-jsbsim.yml', 'compose.px4-jsbsim-split.yml'):
               for address in ('127.0.0.1', '0.0.0.0'):
                   env = dict(os.environ, PX4_SIH_IMAGE='px4-sih:config-only', SITL_BIND_ADDRESS=address)
                   data = json.loads(subprocess.check_output(

@@ -96,9 +96,9 @@ Default section order:
 ## Project Contracts
 
 - This repository builds and documents Docker images for pre-built SITL
-  runtimes. ArduPilot SITL is the mature primary path; PX4 SIH is a sibling
-  runtime path. Keep runtime images focused on running SITL, not rebuilding the
-  autopilot after startup.
+  runtimes. ArduPilot SITL is the mature primary path; PX4 is a sibling family
+  with SIH and experimental JSBSim paths. Runtime images run SITL; they do not
+  rebuild the autopilot after startup.
 - Treat `./ardupilot` as an external checkout. Do not edit it unless the user
   explicitly asks for upstream ArduPilot changes. It contains its own
   `AGENTS.md`.
@@ -132,7 +132,8 @@ PR checks without firmware/image builds or live containers:
   `python3 -m py_compile scripts/populate-config-bundles.py docker/*.py`
 - Runtime configuration/lifecycle/protocol edits:
   `python3 -m unittest discover -s docker -p 'test_*.py'` and
-  `for script in docker/*.sh; do bash -n "$script"; done`
+  `for script in docker/*.sh; do bash -n "$script"; done` and
+  `for script in docker/px4-rc.*; do sh -n "$script"; done`
 - Config bundle edits:
   `python3 -m json.tool configs/frames/arducopter-quad/vehicleinfo.json` and
   `python3 -m json.tool configs/frames/arduplane-plane/vehicleinfo.json`
@@ -167,7 +168,7 @@ sandboxed environments.
 - Preserve expected localhost and LAN client connectivity. Do not add security
   restrictions that break these connections or change bind/publication defaults
   without an explicit request; explain trade-offs instead of silently locking down.
-- Default single-vehicle ArduCopter/JSBSim to one combined container with an
+- Default single-vehicle ArduCopter/JSBSim and PX4/JSBSim to one combined container with an
   isolated physics Python environment; retain the explicit two-container option.
   Share adapter/model logic and qualify both deployment lifecycles.
 - Keep custom external-physics adapters in project-owned code outside
@@ -188,4 +189,5 @@ sandboxed environments.
 Root-owned files include `Dockerfile`, `Dockerfile.px4-sih`, `Dockerfile.jsbsim`,
 `compose.jsbsim.yml`, `compose.jsbsim-models.yml`, `compose.jsbsim-split.yml`,
 `compose.jsbsim-split-models.yml`, `README.md`,
-`compose.sitl.yml`, `compose.px4-sih.yml`, `env.list`, `.dockerignore`, and `.gitignore`.
+`compose.sitl.yml`, `compose.px4-sih.yml`, `Dockerfile.px4-jsbsim`,
+`compose.px4-jsbsim*.yml`, `env.list`, `.dockerignore`, and `.gitignore`.

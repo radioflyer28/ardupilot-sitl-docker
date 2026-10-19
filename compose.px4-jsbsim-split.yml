@@ -1,0 +1,49 @@
+# Experimental independent PX4 and JSBSim images; simulator TCP stays unpublished.
+services:
+  physics:
+    image: ${PX4_JSBSIM_PHYSICS_IMAGE:-px4-jsbsim:qualify-v1.16.0-physics}
+    init: true
+    stop_grace_period: 10s
+    environment:
+      JSBSIM_MODEL: ${JSBSIM_MODEL:-F450}
+    command: ["--run-dir", "/physics", "--sysid", "${SYSID:-1}", "--seed", "${JSBSIM_SEED:-0}", "--location", "${LAT:-37.1971467}", "${LON:--80.5780381}", "${ALT:-618}", "${DIR:-0}"]
+    volumes:
+      - physics-runs:/physics
+  px4:
+    image: ${PX4_JSBSIM_IMAGE:-px4-jsbsim:qualify-v1.16.0-split}
+    init: true
+    stop_grace_period: 20s
+    depends_on:
+      physics:
+        condition: service_started
+    environment:
+      DYNAMICS_BACKEND: jsbsim
+      JSBSIM_DEPLOYMENT: external
+      JSBSIM_MODEL: ${JSBSIM_MODEL:-F450}
+      JSBSIM_HOST: physics
+      JSBSIM_STATUS_FILE: /physics/status.json
+      JSBSIM_SEED: ${JSBSIM_SEED:-0}
+      INSTANCE: 0
+      SYSID: ${SYSID:-1}
+      MODEL: jsbsim_quadrotor_x
+      LAT: ${LAT:-37.1971467}
+      LON: ${LON:--80.5780381}
+      ALT: ${ALT:-618}
+      DIR: ${DIR:-0}
+      SPEEDUP: 1
+      SITL_STATE: fresh
+      PX4_RUN_DIR: /home/px4/runs
+      PX4_GCS_RELAY: 1
+      SITL_CONFIG_DIR: /configs
+      MISSION_FILE: ${MISSION_FILE:-}
+      FENCE_FILE: ${FENCE_FILE:-}
+      RALLY_FILE: ${RALLY_FILE:-}
+    ports:
+      - "${SITL_BIND_ADDRESS:-127.0.0.1}:${PX4_GCS_PORT:-18570}:18670/udp"
+    volumes:
+      - px4-runs:/home/px4/runs
+      - physics-runs:/physics:ro
+      - ./configs/examples:/configs:ro
+volumes:
+  px4-runs:
+  physics-runs:

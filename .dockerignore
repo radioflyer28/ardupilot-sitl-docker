@@ -3,6 +3,7 @@
 !Dockerfile
 !Dockerfile.px4-sih
 !Dockerfile.jsbsim
+!Dockerfile.px4-jsbsim
 !README.md
 !env.list
 !.dockerignore
@@ -10,3 +11,4 @@
 !docker/*.py
 !docker/*.sh
 !docker/px4-rc.mavlink
+!docker/px4-rc.simulator

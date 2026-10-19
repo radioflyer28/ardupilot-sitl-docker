@@ -15,13 +15,18 @@ container should also use `--no-rebuild`, or use the included `run-sitl.sh`
 wrapper.
 
 
-Experimental JSBSim quadrotor physics defaults to one combined container through
-`compose.jsbsim.yml`, without modifying ArduPilot. `compose.jsbsim-split.yml`
-retains the optional two-container deployment. See
-[ArduCopter + JSBSim](docs/ARDUCOPTER_JSBSIM.md) for build/run commands, backend
-switching, read-only multi-model catalogs (`JSBSIM_MODEL`) and qualification
-limits. Ordinary ArduPilot images default to internal physics; the dedicated
-combined JSBSim image defaults to JSBSim.
+Experimental JSBSim quadrotor physics is available for both autopilots, without
+modifying their upstream code. Each defaults to one combined container and
+retains an optional two-container deployment:
+
+- [ArduCopter + JSBSim](docs/ARDUCOPTER_JSBSIM.md): `compose.jsbsim.yml` or
+  `compose.jsbsim-split.yml`.
+- [PX4 + JSBSim](docs/PX4_JSBSIM.md): `compose.px4-jsbsim.yml` or
+  `compose.px4-jsbsim-split.yml`.
+
+The guides cover build/run commands, backend switching, shared read-only model
+catalogs (`JSBSIM_MODEL`) and qualification limits. Ordinary autopilot images
+default to internal physics; dedicated combined JSBSim images default to JSBSim.
 
 Quick Start
 -----------

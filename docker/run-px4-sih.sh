@@ -19,6 +19,9 @@ for arg in "$@"; do
     esac
 done
 model="${MODEL:-${PX4_SIM_MODEL:-sihsim_quadx}}"
+if [ "${DYNAMICS_BACKEND:-internal}" = "jsbsim" ]; then
+    model="${MODEL:-${PX4_SIM_MODEL:-jsbsim_quadrotor_x}}"
+fi
 
 if [ ! -x "${build_path}/bin/px4" ]; then
     printf 'run-px4-sih.sh: missing PX4 binary: %s\n' "${build_path}/bin/px4" >&2
@@ -62,7 +65,12 @@ if [ "${1:-}" = "--healthcheck" ]; then
     exec python3 "${helper_dir}/run_state.py" --root "${run_dir}" --healthcheck
 fi
 
+validation_args=()
+if [ "${1:-}" = "--validate" ]; then
+    validation_args=(--validate)
+    shift
+fi
 exec python3 "${helper_dir}/run_state.py" \
     --root "${run_dir}" --state "${SITL_STATE:-fresh}" \
-    --stop-timeout "${SITL_STOP_TIMEOUT:-10}" -- \
+    --stop-timeout "${SITL_STOP_TIMEOUT:-10}" "${validation_args[@]}" -- \
     "${build_path}/bin/px4" -i "${instance}" -d "${build_path}/etc" "$@"

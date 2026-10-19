@@ -1,0 +1,10 @@
+#!/bin/sh
+# PATH-sourced before simulator/estimator startup; installed PX4 files stay intact.
+if [ "${DYNAMICS_BACKEND:-internal}" = "jsbsim" ]; then
+    if [ -z "${PX4_JSBSIM_PARAMS:-}" ] || [ ! -f "$PX4_JSBSIM_PARAMS" ]; then
+        echo "PX4 JSBSim requires managed model-derived parameters" >&2
+        return 1
+    fi
+    . "$PX4_JSBSIM_PARAMS" || return 1
+fi
+. "${PX4_RUNTIME_ETC}/init.d-posix/px4-rc.simulator"

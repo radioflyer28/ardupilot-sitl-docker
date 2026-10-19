@@ -1,0 +1,32 @@
+# syntax=docker/dockerfile:1
+ARG PX4_IMAGE=px4-sih:qualify-v1.16.0-localhost
+FROM python:3.12-slim AS simulator
+RUN pip install --no-cache-dir --only-binary=:all: jsbsim==1.3.3 numpy==2.2.6 pymavlink==2.4.50 \
+    && mkdir /physics && chown 1000:1000 /physics
+COPY docker/jsbsim_adapter.py docker/px4_jsbsim_adapter.py docker/run_state.py docker/qualify-jsbsim-model.py /opt/sitl/
+ENV JSBSIM_DEBUG=0 PYTHONUNBUFFERED=1
+USER 1000:1000
+WORKDIR /physics
+ENTRYPOINT ["python3", "/opt/sitl/px4_jsbsim_adapter.py"]
+CMD ["--run-dir", "/physics"]
+
+# Refresh only project-owned helpers; retain the prebuilt PX4 firmware and assets.
+FROM ${PX4_IMAGE} AS autopilot
+USER root
+RUN install -d -m 0755 -o px4 -g px4 /home/px4/runs
+COPY --chmod=755 docker/px4-sih-entrypoint.sh docker/run-px4-sih.sh docker/px4-rc.mavlink docker/px4-rc.simulator /usr/local/bin/
+COPY docker/run_state.py docker/px4_jsbsim_runtime.py docker/px4_jsbsim_adapter.py docker/jsbsim_adapter.py \
+    docker/upload-plan-artifacts.py docker/px4-gcs-relay.py docker/qualify-jsbsim-model.py /usr/local/bin/
+USER px4
+ENV PX4_SIM_MODEL="" JSBSIM_DEPLOYMENT=external DYNAMICS_BACKEND=internal
+HEALTHCHECK --interval=5s --timeout=3s --start-period=90s --retries=3 \
+    CMD ["/usr/local/bin/run-px4-sih.sh", "--healthcheck"]
+
+# Physics dependencies remain independent of the autopilot helper environment.
+FROM autopilot AS combined
+USER root
+RUN /usr/bin/python3 -m venv /opt/jsbsim-venv \
+    && /opt/jsbsim-venv/bin/pip install --no-cache-dir --only-binary=:all: jsbsim==1.3.3 numpy==2.2.6 pymavlink==2.4.50
+USER px4
+ENV DYNAMICS_BACKEND=jsbsim JSBSIM_DEPLOYMENT=local \
+    JSBSIM_PYTHON=/opt/jsbsim-venv/bin/python3 JSBSIM_DEBUG=0 PYTHONUNBUFFERED=1

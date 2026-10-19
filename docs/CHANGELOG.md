@@ -10,6 +10,12 @@ by development eras and notable commit ranges rather than semantic versions.
 
 ## Unreleased
 
+- Added experimental PX4 1.16.0/JSBSim 1.3.3 quad-X support using unchanged
+  prebuilt firmware and the same read-only model catalogs as ArduCopter. Includes
+  combined-default/split-option images, model-derived rotor configuration,
+  sensor-first lockstep, seeded sensor noise and coupled supervision. Scoped
+  normal-EKF flights and failure tests pass; see [PX4_JSBSIM.md](PX4_JSBSIM.md).
+
 - Made single-container ArduCopter/JSBSim the default deployment, with an isolated
   physics Python environment and common process supervision. Retained explicit
   split-container Compose and shared read-only model catalogs.

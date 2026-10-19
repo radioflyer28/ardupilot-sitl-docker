@@ -29,6 +29,11 @@ FlightGear, and JSBSim sources should not be fetched for the SIH image unless a
 future mode explicitly needs them.
 
 
+For external quad-X physics using the prebuilt v1.16.0 runtime, see
+[PX4 + JSBSim](PX4_JSBSIM.md). It has combined and split packaging and shares
+read-only catalogs with ArduCopter. The ordinary SIH image remains internal-only
+by default; the dedicated JSBSim image supplies the adapter and physics environment.
+
 ## Source Findings
 
 Official PX4 SIH docs for `main` describe `make px4_sitl_sih sihsim_quadx` as

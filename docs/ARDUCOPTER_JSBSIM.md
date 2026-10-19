@@ -12,6 +12,9 @@ local child failures and graceful shutdown were exercised separately. Exact
 images, measurements and limits are recorded in
 [RUNTIME_QUALIFICATION.md](RUNTIME_QUALIFICATION.md#combined-default-and-optional-split-deployment).
 
+For the same model catalog with PX4, see [PX4 + JSBSim](PX4_JSBSIM.md).
+The shared physics assets do not imply identical transport or sensor contracts.
+
 Keep the custom adapter and aircraft assets in project-owned code outside the
 external `ardupilot/` checkout. Start in this repository; a dedicated repository
 can own independent releases later. An ArduPilot fork is not an expected

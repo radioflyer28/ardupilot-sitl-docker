@@ -140,8 +140,23 @@ to internal dynamics; the dedicated combined image defaults to JSBSim.
 - [ ] Add commanded roll/pitch manoeuvres and broader aircraft-fidelity checks
   beyond the current motor-sign, stationary/free-fall, hover and yaw cases.
 
-Live engine swapping, airborne initialization, checkpoint restore and PX4 are
+Live engine swapping, airborne initialization and checkpoint restore remain
 later work, not acceptance requirements for this first slice.
+
+### PX4 + shared JSBSim catalogs
+
+- [x] Reuse the existing PX4 1.16.0 simulator module without firmware/source edits.
+- [x] Add a separate simulator-MAVLink adapter with sensor-first bootstrap,
+  matched lockstep/IMU rates, seeded sensor noise and shared physical model assets.
+- [x] Package combined-default/split-option deployments with model-derived rotor
+  configuration, physics-aware readiness and bounded shutdown.
+- [x] Qualify installed F450 flights and both failure directions in both topologies;
+  qualify HeavyQuad flight/clean stop in both topologies and retain SIH/ArduCopter regressions.
+- [ ] Broaden home/aircraft/sensor models, controller tuning and physical fidelity
+  checks; qualify other releases and stripped SIH build targets separately.
+- [ ] Extend startup-order, stalled-peer and transport-interruption coverage.
+
+See [PX4_JSBSIM.md](PX4_JSBSIM.md) for the implemented contracts and exact scope.
 
 ### Generalization after the first pairing
 
@@ -151,9 +166,9 @@ later work, not acceptance requirements for this first slice.
   signal mappings, initial conditions/trim, readiness, reset and resource needs.
 - Add explicit managed adapters instead of unrestricted upstream flag forwarding;
   prevent duplicate simulator launch by upstream tooling.
-- Add external simulator packaging/services and a PX4 external-simulation variant
-  only after its native module/bridge requirements are identified. Four logical
-  runtime profiles do not require four independent implementations.
+- Add further external simulator packaging/services only after their native
+  module/bridge requirements are identified. The current PX4/JSBSim pairing reuses
+  a prebuilt binary; four profiles do not require four independent implementations.
 - Extend scenario orchestration for coordinated failure/reset, shared-world
   identities and world-level clock settings. Keep persisted autopilot files
   distinct from checkpoint restoration.

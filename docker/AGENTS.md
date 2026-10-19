@@ -47,6 +47,24 @@ the images, plus host-only regression and opt-in Docker qualification tests.
   the autopilot. The adapter times out after loss of actuator progress.
   Backend/model switches require restarting both sides; resume/Lua pose injection
   are unsupported. Internal dynamics remain unchanged.
+- `px4_jsbsim_adapter.py`: experimental PX4 simulator-MAVLink transport over the
+  shared QuadX/catalog implementation in `jsbsim_adapter.py`. Keep sensor noise
+  separate from truth. Match the 400 Hz sensor clock to PX4 IMU integration;
+  require exact lockstep replies after sensor-first bootstrap. Validate actuator
+  identity/range, geometry, and transport loss; resume/reconnection is unsupported.
+  TCP loss invalidates physics readiness immediately. Allow at most the link
+  timeout for Compose's subsequent stop signal; otherwise fail the physics run.
+  `px4_jsbsim_runtime.py` prepares model-derived rotor/motor/clock parameters,
+  verifies fresh matching physics identity, and integrates local/external physics
+  into `run_state.py`. Local physics lives under work/physics and shares bounded
+  shutdown. External physics is a single peer with a read-only status mount.
+  `px4-rc.simulator` applies the generated contract before native simulator startup,
+  without modifying PX4 files. The dedicated image defaults to JSBSim; selecting
+  internal dynamics retains native SIH. Flight qualification remains separate.
+  `test_px4_jsbsim.py` owns host-only protocol/geometry/configuration checks.
+  `qualify-jsbsim.py --family px4` selects PX4 installed-image/lifecycle checks;
+  `px4_jsbsim_flight.py` uses normal EKF/arming and PX4 takeoff, reposition/yaw,
+  and landing commands. Collect exact images and noise-free truth separately.
 - `px4-gcs-relay.py`: optional supervised UDP bridge preserving a fixed PX4 peer
   while supporting host-client reconnection and multiple heartbeat-active clients.
 - `qualify-runtime.py`, `qualification-ready.lua`: opt-in mounted-helper or
@@ -112,7 +130,8 @@ the images, plus host-only regression and opt-in Docker qualification tests.
 
 - `python3 -m unittest discover -s docker -p 'test_*.py'`
 - `python3 -m py_compile docker/*.py`
-- `for script in docker/*.sh; do bash -n "$script"; done` and `sh -n docker/px4-rc.mavlink`
+- `for script in docker/*.sh; do bash -n "$script"; done` and
+  `for script in docker/px4-rc.*; do sh -n "$script"; done`
 - `python3 docker/upload-plan-artifacts.py --dry-run --config-dir configs/examples/mission --mission missions/simple-copter.waypoints`
 - `python3 docker/upload-plan-artifacts.py --dry-run --config-dir configs/examples/plan-artifacts --fence fences/simple-polygon.json --rally rally/recovery-points.json`
 - Live pinned-release SITL/direct/MAVProxy checks are additional qualification,
