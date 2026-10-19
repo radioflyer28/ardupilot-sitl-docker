@@ -3,8 +3,8 @@
 ## Current contract
 
 Each container owns one vehicle and one read-only input bundle. The managed
-runner parses every selected artifact before launch, then uploads it after a
-initialized heartbeat from the expected `SYSID` and autopilot component 1
+runner parses every selected artifact before launch, then uploads it after an
+initialized heartbeat from the expected autopilot family, `SYSID` and component 1
 (beyond UNINIT/BOOT/CALIBRATING). Boot heartbeats can precede mission storage
 initialization. Readiness requires
 accepted uploads for all selected plans.
@@ -32,7 +32,8 @@ Example service-local bundle:
   rally/recovery-points.json
 ```
 
-Selected empty plans clear the corresponding plan type. Omitted plans do not
+Selected valid empty plans (a WPL header with no rows or JSON with an empty
+collection, not a zero-byte file) clear the corresponding plan type. Omitted plans do not
 send a clear; `SITL_STATE=resume` may therefore retain an existing plan. Fresh
 runs use a new work directory. Explicitly selected plans are re-uploaded even
 on resume. Loading does not arm the vehicle, change flight mode or start a
@@ -69,11 +70,15 @@ rejected upload ACK. Such rejection fails startup.
 
 ## Transport and retry behavior
 
-Direct mode uses `tcp:127.0.0.1:(5760 + INSTANCE * 10)`. This endpoint normally
+ArduPilot direct mode uses `tcp:127.0.0.1:(5760 + INSTANCE * 10)`. This endpoint normally
 supports one client: clients must wait until initialization releases it and the
 container becomes healthy. With MAVProxy, the wrapper adds a private loopback
 `tcpin` output at `20000 + INSTANCE`. `PLAN_UPLOAD_MASTER` can select an explicit
 endpoint but cannot change the configured target identity.
+
+PX4 uses a dedicated native UDP link: local `30000 + INSTANCE`, loopback peer
+`31000 + INSTANCE`. Its initializer binds `udpin:127.0.0.1:<peer>` without
+consuming the GCS/offboard endpoints. See [PX4 SIH](PX4_SIH.md#networking).
 
 The uploader:
 

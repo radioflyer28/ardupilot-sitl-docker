@@ -33,7 +33,7 @@ the images, plus host-only regression and opt-in Docker qualification tests.
   files stay unchanged. `qualify-jsbsim-model.py` checks real model force/sensor
   behavior separately from protocol tests. `qualify-jsbsim.py` owns opt-in installed
   helper/readiness/flight/physics-failure checks and isolated Compose cleanup.
-- Managed JSBSim runs require fresh ArduCopter quad/instance 0 at speed 1.
+- Managed ArduCopter/JSBSim runs require fresh quad/instance 0 at speed 1.
   Local mode is the default: the autopilot supervisor owns a loopback adapter
   process using JSBSIM_PYTHON, with physics state under work/physics so fresh runs
   archive both sides together. Both processes share bounded shutdown; adapter exit
@@ -59,7 +59,7 @@ the images, plus host-only regression and opt-in Docker qualification tests.
   into `run_state.py`. Local physics lives under work/physics and shares bounded
   shutdown. External physics is a single peer with a read-only status mount.
   `px4-rc.simulator` applies the generated contract before native simulator startup,
-  without modifying PX4 files. The dedicated image defaults to JSBSim; selecting
+  without modifying PX4 files. The combined image defaults to JSBSim; selecting
   internal dynamics retains native SIH. Flight qualification remains separate.
   `test_px4_jsbsim.py` owns host-only protocol/geometry/configuration checks.
   `qualify-jsbsim.py --family px4` selects PX4 installed-image/lifecycle checks;

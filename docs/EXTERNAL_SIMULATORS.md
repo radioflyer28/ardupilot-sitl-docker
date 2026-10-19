@@ -5,7 +5,9 @@ SITL and PX4 SITL. It does not count ArduPilot's built-in dynamics or PX4's
 built-in SIH model. A simulator's graphical viewer alone is not necessarily a
 physics backend. Availability and supported vehicle models depend on the
 simulator, bridge, and autopilot release; the options below are research leads,
-not integrations tested with this repository's images.
+not blanket compatibility claims for this repository's images. The project-owned
+JSBSim adapters are the exception with scoped installed checks linked below;
+upstream JSBSim connector support is not the same integration.
 
 For the proposed four runtime profiles, image/service boundaries, clock/reset
 contracts and qualification experiments, see

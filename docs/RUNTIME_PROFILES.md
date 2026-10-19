@@ -124,8 +124,9 @@ Each adapter should declare:
 
 A future manifest should generate the existing native runtime interfaces, not
 create an independent competing interpreter. Reject unsupported capabilities
-rather than silently approximating them. Exact schema, env names, image names
-and adapter API remain open until one integration is qualified.
+rather than silently approximating them. The generalized schema and adapter API
+remain open; the implemented JSBSim env/image contracts live in the two runtime
+guides and must not be mistaken for a universal simulator interface.
 
 ## Research findings and design implications
 
@@ -283,10 +284,10 @@ model validity or release compatibility. The broader selection guidance remains:
   goal; PX4 support is community-supported and release compatibility matters.
 - Evaluate modern Gazebo first if shared worlds, collisions, multi-vehicle
   interactions or rich sensors are the immediate goal.
-- Prove one ArduPilot/backend pairing end-to-end, then add PX4 via its own native
-  adapter. Do not build a universal abstraction before measuring the first path.
+- ArduCopter and PX4 now have separately qualified JSBSim adapters. Use that
+  evidence before generalizing; other backends still need their own experiments.
 
-Before implementation, choose the specific aircraft asset and pinned versions
+Before adding another integration, choose the specific aircraft asset and pinned versions
 for the selected pairing; decide required fidelity, sensor set, initial-state behavior and
 repeatability tolerances. Use experiment results to settle image variants,
 network topology, shared-world failure policy and manifest capabilities.

@@ -5,7 +5,11 @@
 Live checks performed on 2026-10-16 UTC with Docker Engine 28.1.1 / Docker Desktop.
 Three scopes are distinguished below: existing firmware images with mounted
 helpers, newly built images using installed entrypoints, and Compose services
-with host TCP clients. The external ArduPilot checkout was not edited.
+with host clients. Later sections add PX4 UDP and both JSBSim topologies.
+The external ArduPilot checkout was not edited. Results are historical evidence
+for the exact recorded images/helpers, not qualification of every rebuild.
+Current usage lives in the runtime guides; older commands below may now exercise
+newer defaults and do not recreate historical image IDs.
 
 ### Existing-image baseline
 
@@ -100,7 +104,7 @@ Passed with `sihsim_quadx`, instance 0:
 
 These earlier PX4 helpers reported process-only `running`. Automatic
 heartbeat readiness and mission/fence/rally initialization were absent in those
-helpers; the newer implementation needs its own image qualification.
+helpers; the newer readiness implementation is qualified separately below.
 
 ## Newly packaged images and JSON-backed compatibility
 
@@ -361,7 +365,9 @@ Successful evidence:
   an internal-versus-JSBSim flight comparison. All qualification projects cleaned
   up their containers and volumes.
 
-Reproduce into new empty directories:
+Run the current combined-default checker into new empty directories (these
+commands do not recreate the historical split image tuple above; see the later
+combined/split section and runtime guide for current packaging):
 
 ```bash
 python3 docker/qualify-jsbsim.py --output artifacts/jsbsim-flight-new

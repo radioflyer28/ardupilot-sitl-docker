@@ -2,14 +2,14 @@ SITL Docker Images
 ==================
 
 This repository builds Docker images for running pre-built autopilot
-Software-in-the-Loop (SITL) vehicles. The mature path is ArduPilot SITL. A v1
-PX4 Simulator-In-Hardware (SIH) sibling image is also available for users who
-want a PX4-native, headless runtime.
+Software-in-the-Loop (SITL) vehicles: ArduPilot with built-in dynamics, PX4 with
+Simulator-In-Hardware (SIH) dynamics, and experimental JSBSim quad-X physics for
+both families. All run prebuilt firmware; none rebuild the autopilot at startup.
 
 The ArduPilot image flow is centered on building ArduPilot in a heavy builder
 stage and copying the pre-built SITL tree into a smaller runtime stage.
 
-The runtime image is meant to start quickly with `--no-rebuild`. It does not
+The ArduPilot runtime image is meant to start quickly with `--no-rebuild`. It does not
 include a full compiler toolchain, so manual `sim_vehicle.py` runs inside the
 container should also use `--no-rebuild`, or use the included `run-sitl.sh`
 wrapper.
@@ -28,8 +28,29 @@ The guides cover build/run commands, backend switching, shared read-only model
 catalogs (`JSBSIM_MODEL`) and qualification limits. Ordinary autopilot images
 default to internal physics; dedicated combined JSBSim images default to JSBSim.
 
-Quick Start
------------
+Choose a Runtime
+----------------
+
+| Autopilot / physics | Start here | Default deployment |
+| --- | --- | --- |
+| ArduPilot / internal | [Quick start](#quick-start-arducopter) | One vehicle container; optional three-vehicle Compose example |
+| PX4 / internal SIH | [PX4 SIH image](#px4-sih-image) | One vehicle container with localhost UDP relay |
+| ArduCopter / JSBSim | [Build and run](docs/ARDUCOPTER_JSBSIM.md#running-the-experimental-integration) | Combined container; split optional |
+| PX4 / JSBSim | [Build and run](docs/PX4_JSBSIM.md#build-and-run-one-container) | Combined container; split optional |
+
+Run commands from the repository root with Docker/Buildx and Compose v2 available.
+Archive builds also require host `zstd`; MAVProxy client commands require a host
+MAVProxy installation. Build or load the selected images first: local
+`qualify-*` tags are evidence labels, not published downloads or immutable pins.
+See [qualification](docs/RUNTIME_QUALIFICATION.md) for exact tested image IDs.
+
+`env.list` is ArduPilot-specific, not a shared PX4 configuration file. Stop the
+current scenario before switching profiles, since examples reuse host ports.
+JSBSim currently requires a fresh ground start, instance 0 and speed 1; model
+selection is not a guarantee of tuning or real-aircraft fidelity.
+
+Quick Start: ArduCopter
+----------------------
 
 Build a Copter release image and export it as a compressed archive:
 
@@ -102,11 +123,15 @@ WAF_JOBS=8 scripts/build-release-image.sh rover 4.6.3
 WAF_JOBS=8 scripts/build-release-image.sh sub 4.5.7
 ```
 
-You can also pass the full ArduPilot ref:
+You can also pass the full vehicle release tag:
 
 ```bash
 WAF_JOBS=8 scripts/build-release-image.sh copter Copter-4.6.3
 ```
+
+For arbitrary branches or commit IDs, use manual builds with `ARDUPILOT_REF`.
+The release helper prefixes inputs without a hyphen with the vehicle name; it
+is not a general ref resolver.
 
 Script environment overrides:
 
@@ -316,6 +341,8 @@ Manual PX4 buildx example:
 ```bash
 docker buildx build -f Dockerfile.px4-sih \
   --build-arg PX4_REF=v1.16.0 \
+  --build-arg PX4_BUILD_TARGET=px4_sitl \
+  --build-arg PX4_BUILD_DIR=px4_sitl_default \
   --build-arg PX4_SIM_MODEL=sihsim_quadx \
   --build-arg PX4_JOBS=8 \
   -t px4-sih:sihsim-quadx-v1.16.0 \
@@ -360,9 +387,11 @@ Default to bridge networking with a localhost-only host endpoint. Select an imag
 built from this checkout with GCS relay support:
 
 ```bash
-PX4_SIH_IMAGE=px4-sih:qualify-v1.16.0-localhost \
-  docker compose -f compose.px4-sih.yml up -d --wait
+export PX4_SIH_IMAGE=px4-sih:sihsim-quadx-v1.16.0
+docker compose -f compose.px4-sih.yml up -d --wait
 mavproxy.py --master=udpout:127.0.0.1:18570
+# After closing the client; retain the run volume:
+docker compose -f compose.px4-sih.yml down
 ```
 
 Clients explicitly send MAVLink/GCS heartbeats to UDP `127.0.0.1:18570`; passive
@@ -389,12 +418,14 @@ LAT           Home latitude, mapped to PX4_HOME_LAT
 LON           Home longitude, mapped to PX4_HOME_LON
 ALT           Home altitude, mapped to PX4_HOME_ALT
 SPEEDUP       Speed factor, mapped to PX4_SIM_SPEED_FACTOR. Default: 1
-PX4_RUN_DIR   Explicit PX4 working directory
+PX4_RUN_DIR   Owned run root; PX4 executes in its work/ subdirectory
 ARTIFACTS_DIR Parent artifact directory; wrapper uses instance_<INSTANCE>
 ```
 
-When `SYSID` is unset, PX4 assigns `MAV_SYS_ID=INSTANCE+1`. Set `SYSID` only
-when you want to override that native instance behavior.
+When neither `SYSID` nor `PX4_PARAM_MAV_SYS_ID` is set, PX4 assigns
+`MAV_SYS_ID=INSTANCE+1`. The native `PX4_PARAM_MAV_SYS_ID` takes precedence over
+`SYSID`. Compose explicitly selects SYSID 1 by default. Native `PX4_HOME_*` and
+`PX4_SIM_SPEED_FACTOR` likewise take precedence over their common aliases.
 
 PX4-native parameter overrides can be passed directly:
 
@@ -407,7 +438,7 @@ docker run -it --rm --network host \
   -e SPEEDUP=2 \
   -e PX4_PARAM_SIH_WIND_N=2 \
   -e PX4_PARAM_SIH_WIND_E=0 \
-  px4-sih:sihsim-quadx
+  px4-sih:sihsim-quadx-v1.16.0
 ```
 
 Available SIH model names come from PX4 and include `sihsim_quadx`,
@@ -434,13 +465,18 @@ See `docs/PX4_SIH.md` for native command/frame limitations.
 More PX4 SIH research and design notes live in `docs/PX4_SIH.md`.
 
 
-Runtime Configuration
----------------------
+ArduPilot Runtime Configuration
+-------------------------------
 
-The image entrypoint runs `run-sitl.sh` by default. Runtime settings can be
+The following configuration, model, Lua, Compose, CLI and logging sections are
+ArduPilot-specific. PX4 uses the [SIH settings above](#px4-sih-image) or its
+[JSBSim guide](docs/PX4_JSBSIM.md). Plan file parsing is shared, but supported
+commands, frames and mission-row semantics remain firmware-specific.
+
+The ArduPilot entrypoint runs `run-sitl.sh` by default. Runtime settings can be
 provided with `env.list` or `docker run -e`.
 
-Common runtime environment variables:
+ArduPilot runtime environment variables:
 
 ```text
 INSTANCE        SITL instance number. Default: 0
@@ -475,7 +511,8 @@ The managed runner validates configuration before staging or launch. Scalar CLI
 options override env values; parameter files layer in this order: native frame
 defaults, bundle files, `PARAM_FILES`, `PARAM_FILE`, repeated CLI
 `--add-param-file` options. Later values win. `PARAM_FILE` no longer discards
-bundle parameters.
+bundle parameters. JSBSim adds a final enforced physics parameter layer; use
+its dedicated guide rather than the internal-model/Lua examples below.
 
 Use `--validate` to check inputs without launching, or
 `--print-effective-config` to inspect the resolved JSON. Both require the
@@ -523,7 +560,8 @@ The runtime image can use mounted model and parameter files without rebuilding
 ArduPilot. Mount your config directory at `/configs`, then set `MODEL` and
 `PARAM_FILE`.
 
-For a JSON-backed Copter physics model:
+For a JSON-backed Copter physics model (create the illustrated custom files first;
+`my_quad.json` and `my_quad.parm` are placeholders, not checked-in assets):
 
 ```bash
 docker run -it --rm \
@@ -635,7 +673,7 @@ For one explicit script, set `LUA_SCRIPT`:
 docker run -it --rm \
   --env-file env.list \
   -v "$PWD/configs/my_quad:/configs:ro" \
-  -e LUA_SCRIPT=initial-state.lua \
+  -e LUA_SCRIPT=scripts/initial-state.lua \
   ardupilot-sitl:copter-4.6.3
 ```
 
@@ -668,6 +706,7 @@ docker run -it --rm \
   ardupilot-sitl:copter-4.6.3
 ```
 
+This example is for ArduPilot internal dynamics, not either JSBSim backend.
 The example script applies one pose when the vehicle arms. Edit
 `scripts/initial-state.lua` to change the position, attitude, body-frame
 velocity, body rates, trigger, or numeric flight mode.

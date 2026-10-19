@@ -1,7 +1,10 @@
 # Session Summary - 2026-06-26
 
 This file summarizes the prompts, answers, and code changes from the Dockerized
-ArduPilot SITL development session.
+ArduPilot SITL development session. It is a historical record, not current
+operating instructions: defaults, argument forwarding, metadata overlays and
+mission loading changed later. Use [README.md](../README.md) and the runtime
+guides for current commands; [CHANGELOG.md](CHANGELOG.md) records later changes.
 
 
 ## Environment File

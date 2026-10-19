@@ -21,7 +21,8 @@ catalogs.
 ## Local Contracts
 
 - Each checked-in bundle must be directly mountable as `SITL_CONFIG_DIR`.
-- Each bundle must include a local `vehicleinfo.json`.
+- Frame bundles must include a local `vehicleinfo.json`; standalone runtime
+  examples under `examples/` use stock frame metadata and need not include it.
 - Relative paths inside bundle `vehicleinfo.json` should point to files in the
   same bundle directory.
 - Runtime examples and bundles may use `scripts/` for Lua, `missions/` for QGC

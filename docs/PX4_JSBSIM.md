@@ -6,6 +6,7 @@ and coupled process-failure checks. A mounted HeavyQuad variant also passed
 flight and clean shutdown in both topologies. These are scoped simulator checks, not validation
 against real aircraft or support for arbitrary models/releases.
 
+Run the commands below from the repository root; build/load the images first.
 Default to one container. The adapter shares the existing ArduPilot `QuadX`
 model/catalog implementation, but uses PX4 simulator MAVLink rather than
 ArduPilot JSON. Neither upstream autopilot is modified. Exact images, evidence
@@ -68,7 +69,7 @@ select by name. To export a starter F450 catalog into a **new** destination:
 
 ```bash
 mkdir -p artifacts
-docker run --rm -v "$PWD/artifacts:/exports" \
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/artifacts:/exports" \
   --entrypoint /opt/jsbsim-venv/bin/python3 px4-jsbsim:qualify-v1.16.0-local \
   /usr/local/bin/px4_jsbsim_adapter.py --export-models /exports/jsbsim-models
 
@@ -78,7 +79,8 @@ docker compose -f compose.px4-jsbsim.yml -f compose.px4-jsbsim-models.yml up -d 
 docker compose -f compose.px4-jsbsim.yml -f compose.px4-jsbsim-models.yml down
 ```
 
-For split mode, use `compose.px4-jsbsim-split.yml` plus
+Keep combined and split base files separate; stop the active project before
+switching. For split mode, use `compose.px4-jsbsim-split.yml` plus
 `compose.px4-jsbsim-split-models.yml`; only physics mounts `/models`.
 An existing ArduCopter-exported catalog can be used directly. Keep asset license
 notices and source provenance when editing or redistributing models.

@@ -28,7 +28,7 @@ claims must remain tied to the recorded tests, not inferred from this design.
 
 ## Running the experimental integration
 
-Prerequisite: build/load `ardupilot-sitl:copter-4.6.3` using the existing release
+Run commands from the repository root. Prerequisite: build/load `ardupilot-sitl:copter-4.6.3` using the existing release
 build workflow. Default to one combined image without replacing that release tag:
 
 ```bash
@@ -212,8 +212,9 @@ unchanged. Parameters may require backend-specific layers; the same controller
 settings are not guaranteed to produce equivalent behavior in both engines.
 
 Out of scope: in-flight engine replacement, arbitrary model compatibility,
-checkpoint restoration, shared-world interactions, PX4 integration, rendered
-sensors and fidelity claims for a real aircraft. Ground-contact support is still
+checkpoint restoration, shared-world interactions, rendered sensors and fidelity
+claims for a real aircraft. PX4 has a separate implemented adapter described in
+[PX4_JSBSIM.md](PX4_JSBSIM.md). Ground-contact support is still
 required for the initial takeoff/landing case.
 
 ## Architecture and ownership
@@ -315,9 +316,10 @@ parameters/state. External initial conditions belong to JSBSim, not the existing
 built-in-physics Lua pose injection. Airborne initialization and trim are later
 capabilities.
 
-Use a private user-defined Docker network for physics traffic. Determine native
-endpoint direction and address resolution during the first experiment; service
-DNS support is not assumed for a firmware interface that may require numeric IPs.
+Local deployment keeps physics traffic on loopback. Split deployment uses a
+private user-defined Docker network; the resolver translates the physics service
+hostname to an IPv4 address before launching ArduPilot. Autopilot-first/DNS-delay
+startup remains unqualified.
 Do not reuse or publish GCS/offboard ports for physics. Preserve localhost host
 publications and explicit LAN opt-in without adding firewall prerequisites.
 
@@ -346,8 +348,9 @@ unqualified; these broader gates must not be inferred from one successful flight
 
 ## Initial implementation selection
 
-- Candidate firmware: existing Copter 4.6.3 image; its binary was observed starting
-  the JSON physics backend. This is not yet coupled-simulation qualification.
+- Selected firmware: existing Copter 4.6.3 binary with JSON backend support.
+  Installed coupled flight/lifecycle checks are recorded in
+  [RUNTIME_QUALIFICATION.md](RUNTIME_QUALIFICATION.md); other releases remain unqualified.
 - JSBSim Python bindings/data: pinned 1.3.3, distributed under the bundled LGPL
   license (retain package license notices and corresponding-source references).
   Upstream source: <https://github.com/JSBSim-Team/jsbsim/tree/v1.3.3>.

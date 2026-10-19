@@ -42,7 +42,8 @@ freezing external adapter or scenario-manifest contracts.
 
 The first experimental external pairing is ArduCopter with the JSBSim F450 quad-X model,
 using ArduPilot's existing JSON physics interface and a project-owned adapter
-outside the upstream checkout. Keep internal dynamics default and swap backends
+outside the upstream checkout. Ordinary images default to internal dynamics;
+dedicated combined images default to JSBSim. Swap backends
 by scenario restart, not in flight. [ARDUCOPTER_JSBSIM.md](ARDUCOPTER_JSBSIM.md)
 owns the design, experimental usage, signal/lifecycle contracts and delivery gates.
 A read-only native JSBSim catalog can hold multiple named quad-X variants with
@@ -60,7 +61,9 @@ are modified. [PX4_JSBSIM.md](PX4_JSBSIM.md) owns usage and limitations.
 
 ## Image architecture
 
-Both Dockerfiles retain separate builder and runtime stages. The ArduPilot
+The ArduPilot and PX4 SIH Dockerfiles retain separate builder and runtime stages.
+The two JSBSim Dockerfiles instead derive from prebuilt autopilot images and
+provide simulator, autopilot and combined targets. The ArduPilot
 builder prebuilds selected waf targets and prepares its Python environment;
 only runtime dependencies, the prebuilt tree and helpers reach the runtime.
 PX4 copies a prebuilt target and starts its `px4` binary without invoking make.
@@ -112,6 +115,9 @@ ROMFS defaults rather than the launcher's `default_params_filename`.
 
 ## Effective configuration
 
+The following resolver and parameter-file rules are ArduPilot-specific; PX4 uses
+native env/parameter controls described in [PX4_SIH.md](PX4_SIH.md).
+
 Scalar CLI options override env values. Bundle metadata fills model/frame
 information; explicit `MODEL`/`--model` wins. Relative artifact references resolve
 against `SITL_CONFIG_DIR`; model/default-param paths inside `vehicleinfo.json`
@@ -124,6 +130,7 @@ Parameter precedence, last definition wins:
 3. `PARAM_FILES` (ordered JSON array).
 4. `PARAM_FILE` (singular convenience layer).
 5. Repeated CLI `--add-param-file` options.
+6. For JSBSim only, the generated mandatory physics contract.
 
 Unlike the earlier resolver, `PARAM_FILE` does not suppress bundle defaults.
 `--validate` and `--print-effective-config` check the prebuilt binary, selected
@@ -159,7 +166,8 @@ and symlinked managed directories rather than deleting user files.
 
 `SITL_STATE=fresh` archives previous work before starting clean. `resume` reuses
 persistent vehicle files; it is not an in-flight checkpoint or a restore of an
-external FDM's physical state and clock. Both restage the entire managed `scripts/` directory; an explicit
+external FDM's physical state and clock. JSBSim rejects resume. For ArduPilot,
+both fresh and resume restage the entire managed `scripts/` directory; an explicit
 `LUA_SCRIPT` overrides bundled scripts by basename. No stale scripts survive.
 Logs and state remain inspectable after failure; history retention is manual.
 

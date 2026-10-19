@@ -77,6 +77,11 @@ Owns durable project documentation beyond quick user commands.
   runtime configuration, or documentation structure changes.
 - Update `SESSION_SUMMARY.md` when preserving chronological session context is
   useful.
+- Audit examples against build scripts, Dockerfiles, entrypoints and Compose:
+  build/run tags must agree, release-specific targets must be explicit, and
+  runtime-family scope must be visible. Check full workflows, not just feature links.
+- Preserve historical results with exact identities; label superseded commands
+  and defaults as historical rather than rewriting evidence as current behavior.
 - Keep docs concise and operational.
 
 

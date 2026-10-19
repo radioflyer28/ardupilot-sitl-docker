@@ -6,9 +6,15 @@ The initial entries were sourced from the git commit history, durable docs, and
 
 The project does not currently maintain tagged releases, so entries are grouped
 by development eras and notable commit ranges rather than semantic versions.
+Entries describe changes at the time, not cumulative current contracts; later
+entries supersede earlier behavior. Use [README.md](../README.md) for current usage.
 
 
 ## Unreleased
+
+- Audited maintained documentation: corrected release-specific PX4 build/run
+  examples, runtime-family scope, catalog-export permissions and stale design
+  status; separated historical evidence from current instructions.
 
 - Added experimental PX4 1.16.0/JSBSim 1.3.3 quad-X support using unchanged
   prebuilt firmware and the same read-only model catalogs as ArduCopter. Includes
@@ -25,7 +31,7 @@ by development eras and notable commit ranges rather than semantic versions.
   XML assets without rebuilding ArduPilot; custom models require qualification.
 
 - Added an experimental no-fork ArduCopter/JSBSim F450 adapter, separate images,
-  Compose topology and physics-aware supervision. Internal dynamics remain default;
+  Compose topology and physics-aware supervision. Ordinary images retain internal defaults;
   installed normal-EKF takeoff/hover/yaw/landing and coupled process-failure checks
   pass for Copter 4.6.3 + JSBSim 1.3.3. Added host protocol/config tests and opt-in
   real-model/flight qualification commands; real-aircraft fidelity remains unvalidated.
@@ -98,7 +104,7 @@ by development eras and notable commit ranges rather than semantic versions.
 - Documented PX4 SIH design boundaries and future shared manifest direction.
 
 
-## Current SITL Runtime And Config Architecture
+## Earlier SITL Runtime And Config Architecture
 
 Source commits include `2e61929`, `eec468b`, `616c982`, `8246746`, `6a051e2`,
 `c2db748`, `a8668ba`, and `da6e731`.

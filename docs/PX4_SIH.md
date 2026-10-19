@@ -8,7 +8,8 @@ how it maps onto this repo's existing SITL conventions.
 
 V1 is implemented as a sibling image path:
 
-- `Dockerfile.px4-sih` builds PX4's `px4_sitl_sih` target.
+- `Dockerfile.px4-sih` builds the selected PX4 target: `px4_sitl_sih` by default,
+  or `px4_sitl` with output directory `px4_sitl_default` for v1.16.0.
 - `scripts/build-px4-sih-image.sh` builds, tags, loads/exports, or pushes PX4
   SIH images with the same output modes and zstd compression behavior as the
   ArduPilot release script.
@@ -19,7 +20,7 @@ V1 is implemented as a sibling image path:
 The PX4 path is intentionally smaller than the ArduPilot path. It does not
 attempt to support shared scenario manifests yet, and it does not reuse
 ArduPilot-only features such as `vehicleinfo.json`, `sim_vehicle.py`, MAVProxy,
-or Lua mission loading.
+or runtime Lua scripting.
 
 The builder also avoids PX4's default recursive clone. SIH does not need
 external simulator stacks, so `Dockerfile.px4-sih` clones PX4 source without
@@ -112,8 +113,10 @@ SPEEDUP   -> PX4_SIM_SPEED_FACTOR
 MODEL     -> PX4_SIM_MODEL
 ```
 
-`SYSID` intentionally defaults to empty for PX4. When it is unset, PX4's
-instance system assigns `MAV_SYS_ID=INSTANCE+1`. Set `SYSID` only when an
+`SYSID` intentionally defaults to empty in the PX4 image (Compose explicitly
+selects 1 by default). When both `SYSID` and `PX4_PARAM_MAV_SYS_ID` are unset,
+PX4's instance system assigns `MAV_SYS_ID=INSTANCE+1`. The native
+`PX4_PARAM_MAV_SYS_ID` override takes precedence over `SYSID`. Set `SYSID` when an
 explicit MAVLink system ID is needed. The managed `px4-rc.mavlink` PATH hook
 reapplies it immediately before native MAVLink links start: v1.16 rcS otherwise
 overwrites the initial `PX4_PARAM_MAV_SYS_ID` with `INSTANCE+1`. No upstream file
@@ -196,7 +199,7 @@ only Docker's host publication defaults to localhost.
 Native host networking remains opt-in and preserves UDP autodiscovery:
 
 ```bash
-docker run -it --rm --network host -e PX4_GCS_RELAY=0 px4-sih:sihsim-quadx
+docker run -it --rm --network host -e PX4_GCS_RELAY=0 px4-sih:sihsim-quadx-v1.16.0
 ```
 
 PX4's docs list common single-instance endpoints such as UDP `14550` for QGC,

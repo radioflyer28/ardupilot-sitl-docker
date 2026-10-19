@@ -3,7 +3,9 @@
 This note captures how to start ArduPilot SITL from a specific state, including
 position, velocity, attitude, rates, mode, and mission context. It is based on
 the local `./ardupilot` checkout and favors wrapper-level integration over
-patching upstream ArduPilot.
+patching upstream ArduPilot. This applies to built-in ArduPilot dynamics, not
+PX4 or the JSBSim adapters. Both JSBSim paths currently require ground starts;
+Lua pose injection cannot reposition their external physical state.
 
 
 ## Summary

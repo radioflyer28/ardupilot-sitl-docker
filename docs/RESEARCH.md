@@ -180,8 +180,9 @@ proposed motor/sensor/time/lifecycle contracts, open decisions and delivery gate
 
 ## External Physics and Flight-Dynamics Simulators
 
-Status: surveyed; an experimental ArduCopter/JSBSim F450 integration is now
-packaged in combined and split forms. Other catalog entries remain unimplemented/unqualified here.
+Status: surveyed; experimental ArduCopter/JSBSim and PX4/JSBSim integrations are
+packaged in combined and split forms with scoped installed qualification. Other
+simulator catalog entries remain unimplemented/unqualified here.
 
 Detailed note:
 
@@ -220,14 +221,14 @@ The host-only suite and the opt-in Docker live suite are distinct checks.
 ## Runtime Profiles and External Dynamics Architecture
 
 Status: broader architecture remains design guidance. The first experimental
-ArduCopter/JSBSim adapter and images now exist; see the dedicated design note for
-its narrower implemented scope and qualification status.
+ArduCopter/JSBSim and sibling PX4/JSBSim adapters and images now exist; see their
+dedicated guides for implemented scope and qualification status.
 
 Detailed note: [RUNTIME_PROFILES.md](RUNTIME_PROFILES.md).
 
 - Distinguishes the four autopilot/internal-or-external profiles from image,
   service, adapter and scenario counts.
-- Defaults single-vehicle ArduCopter/JSBSim to colocated supervised processes with
+- Defaults single-vehicle ArduCopter/JSBSim and PX4/JSBSim to colocated supervised processes with
   isolated dependencies, retaining optional split images. Shared-world backends
   may warrant separate services; capability/version/model contracts remain explicit.
 - Captures clock ownership, readiness, coordinated reset, initial conditions and

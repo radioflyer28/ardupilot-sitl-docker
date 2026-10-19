@@ -1,7 +1,13 @@
 SITL Runtime Config Bundles
 ===========================
 
-Each bundle directory is ready to mount as `SITL_CONFIG_DIR`:
+Run commands from the repository root after building/loading the selected image.
+These are ArduPilot internal-dynamics examples; PX4 does not consume
+`vehicleinfo.json`, `.parm` files or Lua scripts. For shared JSBSim aircraft
+catalogs, use the [ArduCopter](../docs/ARDUCOPTER_JSBSIM.md) or
+[PX4](../docs/PX4_JSBSIM.md) guide instead.
+
+Each frame bundle directory is ready to mount as `SITL_CONFIG_DIR`:
 
 ```bash
 docker run -it --rm \
