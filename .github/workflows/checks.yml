@@ -31,6 +31,29 @@ jobs:
           python3 -m py_compile scripts/populate-config-bundles.py docker/*.py
           for script in scripts/*.sh docker/*.sh; do bash -n "$script"; done
           for script in docker/px4-rc.*; do sh -n "$script"; done
+      - name: LF line endings
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          import sys
+          patterns = ('*.sh', '*.py', '*.lua', '*.mavlink', '*.simulator', '*.yml',
+                      '*.yaml', '*.list', '*.parm', '*.waypoints', '*.json',
+                      'Dockerfile', 'Dockerfile.*')
+          report = subprocess.check_output(['git', 'ls-files', '--eol', '--', *patterns]).decode()
+          bad = []
+          for line in report.splitlines():
+              fields = line.split('\t')
+              if len(fields) != 2:
+                  continue
+              state, name = fields
+              if 'i/crlf' in state or 'w/crlf' in state:
+                  bad.append(f'{name}: {state.strip()}')
+          for entry in bad:
+              print(entry)
+          if bad:
+              sys.exit('CRLF detected; .gitattributes keeps these files at LF.')
+          print('All checked files use LF line endings.')
+          PY
       - name: Checked-in JSON bundles
         run: |
           python3 - <<'PY'

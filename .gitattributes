@@ -1,0 +1,22 @@
+# Normalize text files to LF in the repository.
+* text=auto
+
+# Entrypoints and runtime helpers are copied into images and executed by the
+# kernel. CRLF makes the kernel pass "bash\r" to /usr/bin/env, so container
+# startup fails with exit 127 ("'bash\r': No such file or directory").
+*.sh text eol=lf
+*.py text eol=lf
+*.lua text eol=lf
+*.mavlink text eol=lf
+*.simulator text eol=lf
+Dockerfile text eol=lf
+Dockerfile.* text eol=lf
+
+# Compose/env inputs and configuration bundles.
+*.yml text eol=lf
+*.yaml text eol=lf
+*.list text eol=lf
+*.parm text eol=lf
+*.waypoints text eol=lf
+*.json text eol=lf
+*.md text eol=lf

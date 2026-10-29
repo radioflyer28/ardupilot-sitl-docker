@@ -112,6 +112,9 @@ Default section order:
 - Keep Dockerfile COPY sources and `.dockerignore` allowlists aligned when adding
   runtime helpers; packaging tests must exercise installed entrypoints, not only
   mounted source helpers.
+- Keep `.gitattributes` covering every copied-then-executed file type. CRLF in a
+  shebang makes the kernel ask `/usr/bin/env` for `bash\r`, so containers exit
+  127 on a Windows/WSL clone with `core.autocrlf=true`.
 - Keep checked-in config bundles small and example-oriented. Use
   `scripts/populate-config-bundles.py` for full generated catalogs.
 - Keep the README user-facing. Put design rationale in `docs/DESIGN.md`,
@@ -137,6 +140,8 @@ PR checks without firmware/image builds or live containers:
 - Config bundle edits:
   `python3 -m json.tool configs/frames/arducopter-quad/vehicleinfo.json` and
   `python3 -m json.tool configs/frames/arduplane-plane/vehicleinfo.json`
+- Line-ending edits: `git ls-files --eol -- '*.sh' '*.py' 'Dockerfile*' '*.yml'`
+  must report no `i/crlf` or `w/crlf` entries.
 - Compose edits: `docker compose -f compose.sitl.yml config` and
   `PX4_SIH_IMAGE=px4-sih:config-only docker compose -f compose.px4-sih.yml config`;
   external physics: `docker compose -f compose.jsbsim.yml config`.
@@ -192,4 +197,5 @@ Root-owned files include `Dockerfile`, `Dockerfile.px4-sih`, `Dockerfile.jsbsim`
 `compose.jsbsim.yml`, `compose.jsbsim-models.yml`, `compose.jsbsim-split.yml`,
 `compose.jsbsim-split-models.yml`, `README.md`,
 `compose.sitl.yml`, `compose.px4-sih.yml`, `Dockerfile.px4-jsbsim`,
-`compose.px4-jsbsim*.yml`, `env.list`, `.dockerignore`, and `.gitignore`.
+`compose.px4-jsbsim*.yml`, `env.list`, `.dockerignore`, `.gitattributes`, and
+`.gitignore`.
